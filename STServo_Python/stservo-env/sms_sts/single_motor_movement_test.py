@@ -99,6 +99,38 @@ else:
 print("")
 
 
+#-----------------------------------------------------SETTING HELPERS-----------------------------------------------------------
+
+def setSetting(address, value, num_bytes, name):
+    if num_bytes == 1:
+        scs_comm_result, scs_error = packetHandler.write1ByteTxRx(SCS_ID, address, value)
+    else:
+        scs_comm_result, scs_error = packetHandler.write2ByteTxRx(SCS_ID, address, value)
+
+    if scs_comm_result != COMM_SUCCESS:
+        print(f"[{name}] {packetHandler.getTxRxResult(scs_comm_result)}")
+    elif scs_error != 0:
+        print(f"[{name}] {packetHandler.getRxPacketError(scs_error)}")
+    else:
+        print(f"[{name}] Set to {value}")
+
+def getSetting(address, num_bytes, name):
+    if num_bytes == 1:
+        value, scs_comm_result, scs_error = packetHandler.read1ByteTxRx(SCS_ID, address)
+    else:
+        value, scs_comm_result, scs_error = packetHandler.read2ByteTxRx(SCS_ID, address)
+
+    if scs_comm_result != COMM_SUCCESS:
+        print(f"[{name}] {packetHandler.getTxRxResult(scs_comm_result)}")
+    elif scs_error != 0:
+        print(f"[{name}] {packetHandler.getRxPacketError(scs_error)}")
+    else:
+        print(f"[{name}] Read {value}")
+    return value
+
+#-----------------------------------------------------POSITION CORRECTION (OFS) CALIBRATION-----------------------------------------------------------
+
+
 #-----------------------------------------------------MOVE TO POSITION FUNCTION-----------------------------------------------------------
 
 def move_to_position(packetHandler, scs_id, goal_position, moving_speed, moving_acc):
