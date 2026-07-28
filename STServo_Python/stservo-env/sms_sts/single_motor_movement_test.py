@@ -50,9 +50,6 @@ SCS_MAXIMUM_POSITION_VALUE  = 4095          # Max SC Servo rotation value (360 d
 SCS_MOVING_SPEED            = 2400          # SC Servo moving speed (2400 steps/sec)
 SCS_MOVING_ACC              = 50            # SC Servo moving acc (50 steps/sec^2)
 
-index = 0
-scs_goal_position = [SCS_MINIMUM_POSITION_VALUE, SCS_MAXIMUM_POSITION_VALUE]
-
 print(f"SC Servo ID: {SCS_ID}")
 print(f"SC Servo DEVICENAME: {DEVICENAME}")
 print(f"SC Servo BAUDRATE: {BAUDRATE}")
@@ -107,12 +104,22 @@ time.sleep(5)
 try:
     print("Starting the script...")
     while 1:
-        print("Press any key to continue! (or press ESC to quit!)")
-        if getch() == chr(0x1b):
+        user_input = input(f"Enter target position (from {SCS_MINIMUM_POSITION_VALUE} to {SCS_MAXIMUM_POSITION_VALUE}), or 'q' to quit: ")
+        if user_input.strip().lower() == 'q':
             break
 
+        try:
+            goal_position = int(user_input)
+        except ValueError:
+            print(f"'{user_input}' is not a valid number. Please try again.\n")
+            continue
+
+        if goal_position < SCS_MINIMUM_POSITION_VALUE or goal_position > SCS_MAXIMUM_POSITION_VALUE:
+            print(f"Position {goal_position} is out of range. Must be between {SCS_MINIMUM_POSITION_VALUE} and {SCS_MAXIMUM_POSITION_VALUE}.\n")
+            continue
+
         # Write SC Servo goal position/moving speed/moving acc
-        scs_comm_result, scs_error = packetHandler.WritePosEx(SCS_ID, scs_goal_position[index], SCS_MOVING_SPEED, SCS_MOVING_ACC)
+        scs_comm_result, scs_error = packetHandler.WritePosEx(SCS_ID, goal_position, SCS_MOVING_SPEED, SCS_MOVING_ACC)
         if scs_comm_result != COMM_SUCCESS:
             print("%s" % packetHandler.getTxRxResult(scs_comm_result))
         elif scs_error != 0:
@@ -124,7 +131,7 @@ try:
             if scs_comm_result != COMM_SUCCESS:
                 print(packetHandler.getTxRxResult(scs_comm_result))
             else:
-                print("[ID:%03d] GoalPos:%d PresPos:%d PresSpd:%d" % (SCS_ID, scs_goal_position[index], scs_present_position, scs_present_speed))
+                print("[ID:%03d] GoalPos:%d PresPos:%d PresSpd:%d" % (SCS_ID, goal_position, scs_present_position, scs_present_speed))
             if scs_error != 0:
                 print(packetHandler.getRxPacketError(scs_error))
 
@@ -135,12 +142,6 @@ try:
 
             if moving==0:
                 break
-
-        # Change goal position
-        if index == 0:
-            index = 1
-        else:
-            index = 0
 
 #-----------------------------------------------------ENDING THE SCRIPT-------------------------------------------------------
 
