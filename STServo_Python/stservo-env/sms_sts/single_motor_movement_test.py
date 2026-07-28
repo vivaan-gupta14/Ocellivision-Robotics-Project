@@ -36,6 +36,69 @@ sys.path.append("..")
 from scservo_sdk import *                      # Uses SC Servo SDK library
 print("SC Servo Library Imported\n")
 
+#---------------------------------------------------GET AND SET SETTINGS FUNCTIONS-----------------------------------------------------------
+
+def setSetting(address, value, num_bytes, name):
+    if num_bytes == 1:
+        scs_comm_result, scs_error = packetHandler.write1ByteTxRx(SCS_ID, address, value)
+    else:
+        scs_comm_result, scs_error = packetHandler.write2ByteTxRx(SCS_ID, address, value)
+
+    if scs_comm_result != COMM_SUCCESS:
+        print(f"[{name}] {packetHandler.getTxRxResult(scs_comm_result)}")
+    elif scs_error != 0:
+        print(f"[{name}] {packetHandler.getRxPacketError(scs_error)}")
+    else:
+        print(f"[{name}] Set to {value}")
+
+def getSetting(address, num_bytes, name):
+    if num_bytes == 1:
+        value, scs_comm_result, scs_error = packetHandler.read1ByteTxRx(SCS_ID, address)
+    else:
+        value, scs_comm_result, scs_error = packetHandler.read2ByteTxRx(SCS_ID, address)
+
+    if scs_comm_result != COMM_SUCCESS:
+        print(f"[{name}] {packetHandler.getTxRxResult(scs_comm_result)}")
+    elif scs_error != 0:
+        print(f"[{name}] {packetHandler.getRxPacketError(scs_error)}")
+    else:
+        print(f"[{name}] Read {value}")
+    return value
+#-----------------------------------------------------MOVE TO POSITION FUNCTION-----------------------------------------------------------
+
+def move_to_position(packetHandler, scs_id, goal_position, moving_speed, moving_acc):
+    # Write SC Servo goal position/moving speed/moving acc
+    scs_comm_result, scs_error = packetHandler.WritePosEx(scs_id, goal_position, moving_speed, moving_acc)
+    if scs_comm_result != COMM_SUCCESS:
+        print("%s" % packetHandler.getTxRxResult(scs_comm_result))
+    elif scs_error != 0:
+        print("%s" % packetHandler.getRxPacketError(scs_error))
+
+    has_moved = False
+    while 1:
+        # Read SC Servo present position
+        scs_present_position, scs_present_speed, scs_comm_result, scs_error = packetHandler.ReadPosSpeed(scs_id)
+        if scs_comm_result != COMM_SUCCESS:
+            print(packetHandler.getTxRxResult(scs_comm_result))
+        else:
+            print("[ID:%03d] GoalPos:%d PresPos:%d PresSpd:%d" % (scs_id, goal_position, scs_present_position, scs_present_speed))
+        if scs_error != 0:
+            print(packetHandler.getRxPacketError(scs_error))
+
+        # Read SC Servo moving status
+        moving, scs_comm_result, scs_error = packetHandler.ReadMoving(scs_id)
+        if scs_comm_result != COMM_SUCCESS:
+            print(packetHandler.getTxRxResult(scs_comm_result))
+
+        if moving == 1:
+            has_moved = True
+
+        # Trust moving==0 as "arrived" once we've seen it move, OR if we're already
+        # within the servo's dead zone (it may never set moving==1 if the goal is
+        # close enough that it decides no move is needed).
+        if moving == 0 and (has_moved or abs(scs_present_position - goal_position) <= SCS_POSITION_TOLERANCE):
+            break
+
 #-------------------------------------------------------INITIALIZE SERVO SETTINGS-------------------------------------------------
 
 # Default setting
@@ -98,73 +161,6 @@ else:
 
 print("")
 
-
-#-----------------------------------------------------SETTING HELPERS-----------------------------------------------------------
-
-def setSetting(address, value, num_bytes, name):
-    if num_bytes == 1:
-        scs_comm_result, scs_error = packetHandler.write1ByteTxRx(SCS_ID, address, value)
-    else:
-        scs_comm_result, scs_error = packetHandler.write2ByteTxRx(SCS_ID, address, value)
-
-    if scs_comm_result != COMM_SUCCESS:
-        print(f"[{name}] {packetHandler.getTxRxResult(scs_comm_result)}")
-    elif scs_error != 0:
-        print(f"[{name}] {packetHandler.getRxPacketError(scs_error)}")
-    else:
-        print(f"[{name}] Set to {value}")
-
-def getSetting(address, num_bytes, name):
-    if num_bytes == 1:
-        value, scs_comm_result, scs_error = packetHandler.read1ByteTxRx(SCS_ID, address)
-    else:
-        value, scs_comm_result, scs_error = packetHandler.read2ByteTxRx(SCS_ID, address)
-
-    if scs_comm_result != COMM_SUCCESS:
-        print(f"[{name}] {packetHandler.getTxRxResult(scs_comm_result)}")
-    elif scs_error != 0:
-        print(f"[{name}] {packetHandler.getRxPacketError(scs_error)}")
-    else:
-        print(f"[{name}] Read {value}")
-    return value
-
-#-----------------------------------------------------POSITION CORRECTION (OFS) CALIBRATION-----------------------------------------------------------
-
-
-#-----------------------------------------------------MOVE TO POSITION FUNCTION-----------------------------------------------------------
-
-def move_to_position(packetHandler, scs_id, goal_position, moving_speed, moving_acc):
-    # Write SC Servo goal position/moving speed/moving acc
-    scs_comm_result, scs_error = packetHandler.WritePosEx(scs_id, goal_position, moving_speed, moving_acc)
-    if scs_comm_result != COMM_SUCCESS:
-        print("%s" % packetHandler.getTxRxResult(scs_comm_result))
-    elif scs_error != 0:
-        print("%s" % packetHandler.getRxPacketError(scs_error))
-
-    has_moved = False
-    while 1:
-        # Read SC Servo present position
-        scs_present_position, scs_present_speed, scs_comm_result, scs_error = packetHandler.ReadPosSpeed(scs_id)
-        if scs_comm_result != COMM_SUCCESS:
-            print(packetHandler.getTxRxResult(scs_comm_result))
-        else:
-            print("[ID:%03d] GoalPos:%d PresPos:%d PresSpd:%d" % (scs_id, goal_position, scs_present_position, scs_present_speed))
-        if scs_error != 0:
-            print(packetHandler.getRxPacketError(scs_error))
-
-        # Read SC Servo moving status
-        moving, scs_comm_result, scs_error = packetHandler.ReadMoving(scs_id)
-        if scs_comm_result != COMM_SUCCESS:
-            print(packetHandler.getTxRxResult(scs_comm_result))
-
-        if moving == 1:
-            has_moved = True
-
-        # Trust moving==0 as "arrived" once we've seen it move, OR if we're already
-        # within the servo's dead zone (it may never set moving==1 if the goal is
-        # close enough that it decides no move is needed).
-        if moving == 0 and (has_moved or abs(scs_present_position - goal_position) <= SCS_POSITION_TOLERANCE):
-            break
 
 #------------------------------------------------------------MAIN CONTROL LOOP------------------------------------------------
 
