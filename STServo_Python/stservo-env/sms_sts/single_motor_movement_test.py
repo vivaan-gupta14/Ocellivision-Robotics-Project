@@ -108,9 +108,16 @@ DEVICENAME                      = '/dev/tty.usbmodem5AAF2197651'    # Check whic
                                                                 # ex) Windows: "COM1"   Linux: "/dev/ttyUSB0" Mac: "/dev/tty.usbserial-*"
 SCS_MINIMUM_POSITION_VALUE  = 0             # Min SC Servo rotation value (0 degrees)
 SCS_MAXIMUM_POSITION_VALUE  = 4095          # Max SC Servo rotation value (360 degrees)
-SCS_MOVING_SPEED            = 2400          # SC Servo moving speed (2400 steps/sec)
-SCS_MOVING_ACC              = 50            # SC Servo moving acc (50 steps/sec^2)
+SCS_MOVING_SPEED            = 1800          # SC Servo moving speed (2400 steps/sec)
+SCS_MOVING_ACC              = 20            # SC Servo moving acc (50 steps/sec^2)
 SCS_POSITION_TOLERANCE      = 3             # Dead-zone: positions within this range count as "arrived"
+
+DESIRED_CENTER_RAW          = 3860
+RANGE                       = 800
+CORRECTION                      = DESIRED_CENTER_RAW - 2048
+SCS_CALIBRATED_CENTER = 2048 
+SCS_MIN_POSITION = SCS_CALIBRATED_CENTER - RANGE 
+SCS_MAX_POSITION = SCS_CALIBRATED_CENTER + RANGE
 
 print(f"SC Servo ID: {SCS_ID}")
 print(f"SC Servo DEVICENAME: {DEVICENAME}")
@@ -119,6 +126,8 @@ print(f"SC Servo Minimum Position Value: {SCS_MINIMUM_POSITION_VALUE}")
 print(f"SC Servo Maximum Position Value: {SCS_MAXIMUM_POSITION_VALUE}")
 print(f"SC Servo Moving Speed: {SCS_MOVING_SPEED}")
 print(f"SC Servo Moving Acc: {SCS_MOVING_ACC}")
+print(f"SC Servo Desired Center (Raw): {DESIRED_CENTER_RAW}")
+print(f"SC Servo Correction: {CORRECTION}")
 print("")
 
 
@@ -129,7 +138,6 @@ print("")
 # Get methods and members of PortHandlerLinux or PortHandlerWindows
 portHandler = PortHandler(DEVICENAME)
 print("Port Handler Initialized")
-
 
 # Initialize PacketHandler instance
 # Get methods and members of Protocol
@@ -148,8 +156,6 @@ else:
     getch()
     quit()
 
-
-
 # Set port baudrate with error checking
 if portHandler.setBaudRate(BAUDRATE):
     print(f"Succeeded to change the baudrate to {BAUDRATE}")
@@ -161,36 +167,72 @@ else:
 
 print("")
 
+#------------------------------------------------------------POSITION CORRECTION----------------------------------------------
+
+# Move to the desired physical orientation first
+print("Moving to target physical center angle (3750)...")
+move_to_position(packetHandler, SCS_ID, 3750, SCS_MOVING_SPEED, SCS_MOVING_ACC)
+time.sleep(2.0) # Ensure it has completely stopped vibrating
+
+print("--- Starting Offset Calibration Process ---")
+
+# Step 1: Unlock EEPROM Configuration Memory (Address 55 = 0)
+setSetting(address=55, value=0, num_bytes=1, name="EEPROM Lock")
+time.sleep(0.1)
+
+# Step 2: Write the positive offset delta (1702) to Register 31 (2 Bytes)
+setSetting(address=31, value=CORRECTION, num_bytes=2, name="Position Offset (OFS)")
+time.sleep(0.1)
+
+# Step 3: Lock EEPROM back down (Address 55 = 1) to protect the memory
+setSetting(address=55, value=1, num_bytes=1, name="EEPROM Lock")
+time.sleep(0.2)
+
+# Step 4: Verify the offset was written successfully
+getSetting(address=31, num_bytes=2, name="Verified Offset")
+
+# Verify that the servo now reads its current resting position as 2048
+scs_present_position, _, _, _ = packetHandler.ReadPosSpeed(SCS_ID)
+print(f"Current physical position reading after calibration reboot: {scs_present_position}")
+
+# Now this call will execute smoothly. The servo is already physically there,
+# and its internal register accurately confirms it is sitting at 2048.
+print("Confirming alignment with center target...")
+move_to_position(packetHandler, SCS_ID, 2048, SCS_MOVING_SPEED, SCS_MOVING_ACC)
+
+
+
+print(f"--- Calibration Complete. Safe Range: {SCS_MIN_POSITION} to {SCS_MAX_POSITION} --- \n")
+
+time.sleep(5)
+
+
 
 #------------------------------------------------------------MAIN CONTROL LOOP------------------------------------------------
 
 try:
-    print("Moving to position 0")
-    move_to_position(packetHandler, SCS_ID, 0, SCS_MOVING_SPEED, SCS_MOVING_ACC)
+    # Demo sweep now stays within the calibrated safe range - after the OFS
+    # correction above, raw values like 0/1024/4095 no longer correspond to the
+    # old full-rotation sweep and would drive the arm straight into its
+    # mechanical stops.
+    print(f"Moving to low limit ({SCS_MIN_POSITION})")
+    move_to_position(packetHandler, SCS_ID, SCS_MIN_POSITION, SCS_MOVING_SPEED, SCS_MOVING_ACC)
     time.sleep(2)
 
-    print("Moving to position 1024")
-    move_to_position(packetHandler, SCS_ID, 1024, SCS_MOVING_SPEED, SCS_MOVING_ACC)
+    print(f"Moving to center position ({SCS_CALIBRATED_CENTER})")
+    move_to_position(packetHandler, SCS_ID, SCS_CALIBRATED_CENTER, SCS_MOVING_SPEED, SCS_MOVING_ACC)
     time.sleep(2)
 
-    print("Moving to position 2048")
-    move_to_position(packetHandler, SCS_ID, 2048, SCS_MOVING_SPEED, SCS_MOVING_ACC)
+    print(f"Moving to high limit ({SCS_MAX_POSITION})")
+    move_to_position(packetHandler, SCS_ID, SCS_MAX_POSITION, SCS_MOVING_SPEED, SCS_MOVING_ACC)
     time.sleep(2)
 
-    print("Moving to position 3072")
-    move_to_position(packetHandler, SCS_ID, 3072, SCS_MOVING_SPEED, SCS_MOVING_ACC)
-    time.sleep(2)
-
-    print("Moving to 4095")
-    move_to_position(packetHandler, SCS_ID, 4095, SCS_MOVING_SPEED, SCS_MOVING_ACC)
-    time.sleep(2)
-
-    print("Moving to center position (3750)")
-    move_to_position(packetHandler, SCS_ID, 3750, SCS_MOVING_SPEED, SCS_MOVING_ACC)
+    print(f"Moving to center position ({SCS_CALIBRATED_CENTER})")
+    move_to_position(packetHandler, SCS_ID, SCS_CALIBRATED_CENTER, SCS_MOVING_SPEED, SCS_MOVING_ACC)
     time.sleep(2)
 
     while 1:
-        user_input = input(f"Enter target position (from {SCS_MINIMUM_POSITION_VALUE} to {SCS_MAXIMUM_POSITION_VALUE}), or 'q' to quit: ")
+        user_input = input(f"Enter target position (from {SCS_MIN_POSITION} to {SCS_MAX_POSITION}), or 'q' to quit: ")
         if user_input.strip().lower() == 'q':
             break
 
@@ -200,8 +242,8 @@ try:
             print(f"'{user_input}' is not a valid number. Please try again.\n")
             continue
 
-        if goal_position < SCS_MINIMUM_POSITION_VALUE or goal_position > SCS_MAXIMUM_POSITION_VALUE:
-            print(f"Position {goal_position} is out of range. Must be between {SCS_MINIMUM_POSITION_VALUE} and {SCS_MAXIMUM_POSITION_VALUE}.\n")
+        if goal_position < SCS_MIN_POSITION or goal_position > SCS_MAX_POSITION:
+            print(f"Position {goal_position} is out of range. Must be between {SCS_MIN_POSITION} and {SCS_MAX_POSITION}.\n")
             continue
 
         move_to_position(packetHandler, SCS_ID, goal_position, SCS_MOVING_SPEED, SCS_MOVING_ACC)
