@@ -47,6 +47,7 @@ SCS_MINIMUM_POSITION_VALUE  = 0             # Min SC Servo rotation value (0 deg
 SCS_MAXIMUM_POSITION_VALUE  = 4095          # Max SC Servo rotation value (360 degrees)
 SCS_MOVING_SPEED            = 2400          # SC Servo moving speed (2400 steps/sec)
 SCS_MOVING_ACC              = 50            # SC Servo moving acc (50 steps/sec^2)
+SCS_POSITION_TOLERANCE      = 3             # Dead-zone: positions within this range count as "arrived"
 
 print(f"SC Servo ID: {SCS_ID}")
 print(f"SC Servo DEVICENAME: {DEVICENAME}")
@@ -109,7 +110,6 @@ def move_to_position(packetHandler, scs_id, goal_position, moving_speed, moving_
         print("%s" % packetHandler.getRxPacketError(scs_error))
 
     has_moved = False
-    first_iteration = True
     while 1:
         # Read SC Servo present position
         scs_present_position, scs_present_speed, scs_comm_result, scs_error = packetHandler.ReadPosSpeed(scs_id)
@@ -128,12 +128,11 @@ def move_to_position(packetHandler, scs_id, goal_position, moving_speed, moving_
         if moving == 1:
             has_moved = True
 
-        # Only trust moving==0 as "arrived" once we've actually seen it move,
-        # otherwise moving==0 may be a stale flag from before this command was sent.
-        if moving == 0 and (has_moved or (first_iteration and scs_present_position == goal_position)):
+        # Trust moving==0 as "arrived" once we've seen it move, OR if we're already
+        # within the servo's dead zone (it may never set moving==1 if the goal is
+        # close enough that it decides no move is needed).
+        if moving == 0 and (has_moved or abs(scs_present_position - goal_position) <= SCS_POSITION_TOLERANCE):
             break
-
-        first_iteration = False
 
 #------------------------------------------------------------MAIN CONTROL LOOP------------------------------------------------
 
