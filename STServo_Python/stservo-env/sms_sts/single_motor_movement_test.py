@@ -6,7 +6,6 @@ import os
 import time
 import random
 print("General Imports Complete\n")
-time.sleep(2)
 
 #-------------------------------------------------------SETTINGS BASED ON OS---------------------------------------------------
 
@@ -29,14 +28,13 @@ else:
             termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
         return ch
 print("OS Based Settings Complete\n")
-time.sleep(2)
+
 
 #-------------------------------------------------------SERVO PYTHON LIBRARY IMPORT--------------------------------------------
 
 sys.path.append("..")
 from scservo_sdk import *                      # Uses SC Servo SDK library
 print("SC Servo Library Imported\n")
-time.sleep(2)
 
 #-------------------------------------------------------INITIALIZE SERVO SETTINGS-------------------------------------------------
 
@@ -58,7 +56,7 @@ print(f"SC Servo Maximum Position Value: {SCS_MAXIMUM_POSITION_VALUE}")
 print(f"SC Servo Moving Speed: {SCS_MOVING_SPEED}")
 print(f"SC Servo Moving Acc: {SCS_MOVING_ACC}")
 print("")
-time.sleep(5)
+
 
 #--------------------------------------------------PORT AND PACKET HANDLER INITIALIZATION-------------------------------------
 
@@ -67,14 +65,15 @@ time.sleep(5)
 # Get methods and members of PortHandlerLinux or PortHandlerWindows
 portHandler = PortHandler(DEVICENAME)
 print("Port Handler Initialized")
-time.sleep(1)
+
 
 # Initialize PacketHandler instance
 # Get methods and members of Protocol
 #Converts code instructions into bytes
 packetHandler = sms_sts(portHandler)
 print("Packet Handler Initialized")
-time.sleep(1)
+
+time.sleep(5)
 
 # Open port with error checking
 if portHandler.openPort():
@@ -85,7 +84,7 @@ else:
     getch()
     quit()
 
-time.sleep(1)
+
 
 # Set port baudrate with error checking
 if portHandler.setBaudRate(BAUDRATE):
@@ -97,12 +96,72 @@ else:
     quit()
 
 print("")
-time.sleep(5)
 
-#-----------------------------------------------------YOUR CODE HERE-----------------------------------------------------------
+
+#-----------------------------------------------------MOVE TO POSITION FUNCTION-----------------------------------------------------------
+
+def move_to_position(packetHandler, scs_id, goal_position, moving_speed, moving_acc):
+    # Write SC Servo goal position/moving speed/moving acc
+    scs_comm_result, scs_error = packetHandler.WritePosEx(scs_id, goal_position, moving_speed, moving_acc)
+    if scs_comm_result != COMM_SUCCESS:
+        print("%s" % packetHandler.getTxRxResult(scs_comm_result))
+    elif scs_error != 0:
+        print("%s" % packetHandler.getRxPacketError(scs_error))
+
+    has_moved = False
+    first_iteration = True
+    while 1:
+        # Read SC Servo present position
+        scs_present_position, scs_present_speed, scs_comm_result, scs_error = packetHandler.ReadPosSpeed(scs_id)
+        if scs_comm_result != COMM_SUCCESS:
+            print(packetHandler.getTxRxResult(scs_comm_result))
+        else:
+            print("[ID:%03d] GoalPos:%d PresPos:%d PresSpd:%d" % (scs_id, goal_position, scs_present_position, scs_present_speed))
+        if scs_error != 0:
+            print(packetHandler.getRxPacketError(scs_error))
+
+        # Read SC Servo moving status
+        moving, scs_comm_result, scs_error = packetHandler.ReadMoving(scs_id)
+        if scs_comm_result != COMM_SUCCESS:
+            print(packetHandler.getTxRxResult(scs_comm_result))
+
+        if moving == 1:
+            has_moved = True
+
+        # Only trust moving==0 as "arrived" once we've actually seen it move,
+        # otherwise moving==0 may be a stale flag from before this command was sent.
+        if moving == 0 and (has_moved or (first_iteration and scs_present_position == goal_position)):
+            break
+
+        first_iteration = False
+
+#------------------------------------------------------------MAIN CONTROL LOOP------------------------------------------------
 
 try:
-    print("Starting the script...")
+    print("Moving to position 0")
+    move_to_position(packetHandler, SCS_ID, 0, SCS_MOVING_SPEED, SCS_MOVING_ACC)
+    time.sleep(2)
+
+    print("Moving to position 1024")
+    move_to_position(packetHandler, SCS_ID, 1024, SCS_MOVING_SPEED, SCS_MOVING_ACC)
+    time.sleep(2)
+
+    print("Moving to position 2048")
+    move_to_position(packetHandler, SCS_ID, 2048, SCS_MOVING_SPEED, SCS_MOVING_ACC)
+    time.sleep(2)
+
+    print("Moving to position 3072")
+    move_to_position(packetHandler, SCS_ID, 3072, SCS_MOVING_SPEED, SCS_MOVING_ACC)
+    time.sleep(2)
+
+    print("Moving to 4095")
+    move_to_position(packetHandler, SCS_ID, 4095, SCS_MOVING_SPEED, SCS_MOVING_ACC)
+    time.sleep(2)
+
+    print("Moving to center position (3750)")
+    move_to_position(packetHandler, SCS_ID, 3750, SCS_MOVING_SPEED, SCS_MOVING_ACC)
+    time.sleep(2)
+
     while 1:
         user_input = input(f"Enter target position (from {SCS_MINIMUM_POSITION_VALUE} to {SCS_MAXIMUM_POSITION_VALUE}), or 'q' to quit: ")
         if user_input.strip().lower() == 'q':
@@ -118,30 +177,7 @@ try:
             print(f"Position {goal_position} is out of range. Must be between {SCS_MINIMUM_POSITION_VALUE} and {SCS_MAXIMUM_POSITION_VALUE}.\n")
             continue
 
-        # Write SC Servo goal position/moving speed/moving acc
-        scs_comm_result, scs_error = packetHandler.WritePosEx(SCS_ID, goal_position, SCS_MOVING_SPEED, SCS_MOVING_ACC)
-        if scs_comm_result != COMM_SUCCESS:
-            print("%s" % packetHandler.getTxRxResult(scs_comm_result))
-        elif scs_error != 0:
-            print("%s" % packetHandler.getRxPacketError(scs_error))
-
-        while 1:
-            # Read SC Servo present position
-            scs_present_position, scs_present_speed, scs_comm_result, scs_error = packetHandler.ReadPosSpeed(SCS_ID)
-            if scs_comm_result != COMM_SUCCESS:
-                print(packetHandler.getTxRxResult(scs_comm_result))
-            else:
-                print("[ID:%03d] GoalPos:%d PresPos:%d PresSpd:%d" % (SCS_ID, goal_position, scs_present_position, scs_present_speed))
-            if scs_error != 0:
-                print(packetHandler.getRxPacketError(scs_error))
-
-            # Read SC Servo moving status
-            moving, scs_comm_result, scs_error = packetHandler.ReadMoving(SCS_ID)
-            if scs_comm_result != COMM_SUCCESS:
-                print(packetHandler.getTxRxResult(scs_comm_result))
-
-            if moving==0:
-                break
+        move_to_position(packetHandler, SCS_ID, goal_position, SCS_MOVING_SPEED, SCS_MOVING_ACC)
 
 #-----------------------------------------------------ENDING THE SCRIPT-------------------------------------------------------
 
