@@ -240,6 +240,8 @@ setSetting(address=SMS_STS_MAX_VOLTAGE_LIMIT, value = MAX_INPUT_VOLTAGE, num_byt
 setSetting(address=SMS_STS_MIN_VOLTAGE_LIMIT, value = MIN_INPUT_VOLTAGE, num_bytes = 1, name = "Minimum Input Voltage")
 setSetting(address=SMS_STS_CW_DEAD, value = CW_INSENSITIVE_ZONE, num_bytes = 1, name = "Clockwise Insensitive Zone")
 setSetting(address=SMS_STS_CCW_DEAD, value = CCW_INSENSITIVE_ZONE, num_bytes = 1, name = "Counterclockwise Insensitive Zone")
+setSetting(address=SMS_STS_MAX_ANGLE_LIMIT_L, value = SCS_MAX_POSITION + HARD_ANGLE_LIMIT_MARGIN, num_bytes = 2, name = "Max Hardware Angle Limit")
+setSetting(address=SMS_STS_MIN_ANGLE_LIMIT_L, value = SCS_MIN_POSITION - HARD_ANGLE_LIMIT_MARGIN, num_bytes = 2, name = "Min Hardware Angle Limit")
 
 #-----------------------------------------------
 
@@ -253,6 +255,8 @@ getSetting(address=SMS_STS_MAX_VOLTAGE_LIMIT, num_bytes=1, name="Maximum Input V
 getSetting(address=SMS_STS_MIN_VOLTAGE_LIMIT, num_bytes=1, name="Minimum Input Voltage")
 getSetting(address=SMS_STS_CW_DEAD, num_bytes=1, name="Clockwise Insensitive Zone")
 getSetting(address=SMS_STS_CCW_DEAD, num_bytes=1, name="Counterclockwise Insensitive Zone")
+getSetting(address=SMS_STS_MAX_ANGLE_LIMIT_L, num_bytes=2, name="Max Hardware Angle Limit")
+getSetting(address=SMS_STS_MIN_ANGLE_LIMIT_L, num_bytes=2, name="Min Hardware Angle Limit")
 
 #------------------------------------------------
 
