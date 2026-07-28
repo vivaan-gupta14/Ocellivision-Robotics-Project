@@ -106,28 +106,29 @@ SCS_ID                          = 10                                # SC Servo I
 BAUDRATE                        = 1000000                           # SC Servo default baudrate : 1000000 (1 Mbps)
 DEVICENAME                      = '/dev/tty.usbmodem5AAF2197651'    # Check which port is being used on your controller
                                                                 # ex) Windows: "COM1"   Linux: "/dev/ttyUSB0" Mac: "/dev/tty.usbserial-*"
-SCS_MINIMUM_POSITION_VALUE  = 0             # Min SC Servo rotation value (0 degrees)
-SCS_MAXIMUM_POSITION_VALUE  = 4095          # Max SC Servo rotation value (360 degrees)
-SCS_MOVING_SPEED            = 1200          # SC Servo moving speed (2400 steps/sec)
-SCS_MOVING_ACC              = 10            # SC Servo moving acc (50 steps/sec^2)
-SCS_POSITION_TOLERANCE      = 3             # Dead-zone: positions within this range count as "arrived"
+SCS_MOVING_SPEED                = 1200                              # SC Servo moving speed (2400 steps/sec)
+SCS_MOVING_ACC                  = 10                                # SC Servo moving acc (50 steps/sec^2)
+SCS_POSITION_TOLERANCE          = 3                                 # Dead-zone: positions within this range count as "arrived"
 
-DESIRED_CENTER_RAW          = 3860
-RANGE                       = 800
-CORRECTION                      = DESIRED_CENTER_RAW - 2048
-SCS_CALIBRATED_CENTER = 2048 
-SCS_MIN_POSITION = SCS_CALIBRATED_CENTER - RANGE 
-SCS_MAX_POSITION = SCS_CALIBRATED_CENTER + RANGE
+DESIRED_CENTER_RAW              = 3860                              # The raw position that should become the new center
+RANGE                           = 800                               # The maximum offset from the center
+CORRECTION                      = DESIRED_CENTER_RAW - 2048         # The position correction to be applied
+SCS_CALIBRATED_CENTER           = 2048                              # The position value that becomes the "center" position after correction
+SCS_MIN_POSITION                = SCS_CALIBRATED_CENTER - RANGE     # The minimum position value after correction
+SCS_MAX_POSITION                = SCS_CALIBRATED_CENTER + RANGE     # The maximum position value after correction
 
 print(f"SC Servo ID: {SCS_ID}")
-print(f"SC Servo DEVICENAME: {DEVICENAME}")
 print(f"SC Servo BAUDRATE: {BAUDRATE}")
-print(f"SC Servo Minimum Position Value: {SCS_MINIMUM_POSITION_VALUE}")
-print(f"SC Servo Maximum Position Value: {SCS_MAXIMUM_POSITION_VALUE}")
+print(f"SC Servo DEVICENAME: {DEVICENAME}")
 print(f"SC Servo Moving Speed: {SCS_MOVING_SPEED}")
 print(f"SC Servo Moving Acc: {SCS_MOVING_ACC}")
+print(f"SC Servo Position Tolerance: {SCS_POSITION_TOLERANCE}")
 print(f"SC Servo Desired Center (Raw): {DESIRED_CENTER_RAW}")
+print(f"SC Servo Range From Center: {RANGE}")
 print(f"SC Servo Correction: {CORRECTION}")
+print(f"SC Servo Calibrated Center: {SCS_CALIBRATED_CENTER}")
+print(f"SC Servo Minimum Position: {SCS_MIN_POSITION}")
+print(f"SC Servo Maximum Position: {SCS_MAX_POSITION}")
 print("")
 
 
@@ -170,8 +171,8 @@ print("")
 #------------------------------------------------------------POSITION CORRECTION----------------------------------------------
 
 # Move to the desired physical orientation first
-print("Moving to target physical center angle (3750)...")
-move_to_position(packetHandler, SCS_ID, 3750, SCS_MOVING_SPEED, SCS_MOVING_ACC)
+print(f"Moving to target physical center angle ({DESIRED_CENTER_RAW})...")
+move_to_position(packetHandler, SCS_ID, DESIRED_CENTER_RAW, SCS_MOVING_SPEED, SCS_MOVING_ACC)
 time.sleep(2.0) # Ensure it has completely stopped vibrating
 
 print("--- Starting Offset Calibration Process ---")
@@ -198,7 +199,7 @@ print(f"Current physical position reading after calibration reboot: {scs_present
 # Now this call will execute smoothly. The servo is already physically there,
 # and its internal register accurately confirms it is sitting at 2048.
 print("Confirming alignment with center target...")
-move_to_position(packetHandler, SCS_ID, 2048, SCS_MOVING_SPEED, SCS_MOVING_ACC)
+move_to_position(packetHandler, SCS_ID, SCS_CALIBRATED_CENTER, SCS_MOVING_SPEED, SCS_MOVING_ACC)
 
 
 
