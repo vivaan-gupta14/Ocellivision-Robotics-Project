@@ -108,8 +108,8 @@ DEVICENAME                      = '/dev/tty.usbmodem5AAF2197651'    # Check whic
                                                                 # ex) Windows: "COM1"   Linux: "/dev/ttyUSB0" Mac: "/dev/tty.usbserial-*"
 SCS_MINIMUM_POSITION_VALUE  = 0             # Min SC Servo rotation value (0 degrees)
 SCS_MAXIMUM_POSITION_VALUE  = 4095          # Max SC Servo rotation value (360 degrees)
-SCS_MOVING_SPEED            = 1800          # SC Servo moving speed (2400 steps/sec)
-SCS_MOVING_ACC              = 20            # SC Servo moving acc (50 steps/sec^2)
+SCS_MOVING_SPEED            = 1200          # SC Servo moving speed (2400 steps/sec)
+SCS_MOVING_ACC              = 10            # SC Servo moving acc (50 steps/sec^2)
 SCS_POSITION_TOLERANCE      = 3             # Dead-zone: positions within this range count as "arrived"
 
 DESIRED_CENTER_RAW          = 3860
@@ -202,7 +202,7 @@ move_to_position(packetHandler, SCS_ID, 2048, SCS_MOVING_SPEED, SCS_MOVING_ACC)
 
 
 
-print(f"--- Calibration Complete. Safe Range: {SCS_MIN_POSITION} to {SCS_MAX_POSITION} --- \n")
+print(f"--- Calibration Complete --- \n")
 
 time.sleep(5)
 
@@ -232,18 +232,20 @@ try:
     time.sleep(2)
 
     while 1:
-        user_input = input(f"Enter target position (from {SCS_MIN_POSITION} to {SCS_MAX_POSITION}), or 'q' to quit: ")
-        if user_input.strip().lower() == 'q':
+        userInput = input(f"Enter target position (from {-RANGE} to {RANGE}), or 'q' to quit: ")
+        if userInput.strip().lower() == 'q':
             break
 
         try:
-            goal_position = int(user_input)
+            userIntInput = int(userInput)
         except ValueError:
-            print(f"'{user_input}' is not a valid number. Please try again.\n")
+            print(f"'{userIntInput}' is not a valid number. Please try again.\n")
             continue
+        
+        goal_position = userIntInput + 2048
 
         if goal_position < SCS_MIN_POSITION or goal_position > SCS_MAX_POSITION:
-            print(f"Position {goal_position} is out of range. Must be between {SCS_MIN_POSITION} and {SCS_MAX_POSITION}.\n")
+            print(f"Position {userIntInput} is out of range. Must be between {-RANGE} and {RANGE}.\n")
             continue
 
         move_to_position(packetHandler, SCS_ID, goal_position, SCS_MOVING_SPEED, SCS_MOVING_ACC)
