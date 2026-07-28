@@ -71,8 +71,8 @@ SCS_UNLOADING_CONDITIONS        = 47                                # 0b111111: 
                                                                      # bit3 Current, bit4 Angle, bit5 Overload -- all 6 enabled
 SCS_LED_ALARM_CONDITIONS        = 63                                # Same bit layout as above; LED flashes for all 6 conditions
 
-SCS_MOVING_SPEED                = 1800                              # SC Servo moving speed (1800 steps/sec)
-SCS_MOVING_ACC                  = 20                                # SC Servo moving acc (20 steps/sec^2)
+SCS_MOVING_SPEED                = 2400                              # SC Servo moving speed (2400 steps/sec)
+SCS_MOVING_ACC                  = 50                                # SC Servo moving acc (50 steps/sec^2)
 
 SCS_CW_INSENSITIVE_ZONE         = 0
 SCS_CCW_INSENSITIVE_ZONE        = 0
