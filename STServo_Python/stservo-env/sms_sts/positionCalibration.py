@@ -37,36 +37,36 @@ print("SC Servo Library Imported\n")
 
 #---------------------------------------------------GET AND SET SETTINGS FUNCTIONS-----------------------------------------------------------
 
-def setSetting(address, value, num_bytes, name):
+def setSetting(scs_id, address, value, num_bytes, name):
     if num_bytes == 1:
-        scs_comm_result, scs_error = packetHandler.write1ByteTxRx(SCS_ID, address, value)
+        scs_comm_result, scs_error = packetHandler.write1ByteTxRx(scs_id, address, value)
     else:
-        scs_comm_result, scs_error = packetHandler.write2ByteTxRx(SCS_ID, address, value)
+        scs_comm_result, scs_error = packetHandler.write2ByteTxRx(scs_id, address, value)
 
     if scs_comm_result != COMM_SUCCESS:
-        print(f"[{name}] {packetHandler.getTxRxResult(scs_comm_result)}")
+        print(f"[ID:{scs_id:03d}][{name}] {packetHandler.getTxRxResult(scs_comm_result)}")
     elif scs_error != 0:
-        print(f"[{name}] {packetHandler.getRxPacketError(scs_error)}")
+        print(f"[ID:{scs_id:03d}][{name}] {packetHandler.getRxPacketError(scs_error)}")
     else:
-        print(f"[{name}] Set to {value}")
+        print(f"[ID:{scs_id:03d}][{name}] Set to {value}")
 
-def getSetting(address, num_bytes, name):
+def getSetting(scs_id, address, num_bytes, name):
     if num_bytes == 1:
-        value, scs_comm_result, scs_error = packetHandler.read1ByteTxRx(SCS_ID, address)
+        value, scs_comm_result, scs_error = packetHandler.read1ByteTxRx(scs_id, address)
     else:
-        value, scs_comm_result, scs_error = packetHandler.read2ByteTxRx(SCS_ID, address)
+        value, scs_comm_result, scs_error = packetHandler.read2ByteTxRx(scs_id, address)
 
     if scs_comm_result != COMM_SUCCESS:
-        print(f"[{name}] {packetHandler.getTxRxResult(scs_comm_result)}")
+        print(f"[ID:{scs_id:03d}][{name}] {packetHandler.getTxRxResult(scs_comm_result)}")
     elif scs_error != 0:
-        print(f"[{name}] {packetHandler.getRxPacketError(scs_error)}")
+        print(f"[ID:{scs_id:03d}][{name}] {packetHandler.getRxPacketError(scs_error)}")
     else:
-        print(f"[{name}] Read {value}")
+        print(f"[ID:{scs_id:03d}][{name}] Read {value}")
     return value
 
-#-----------------------------------------------------MOVE TO POSITION FUNCTION-----------------------------------------------------------
+#-----------------------------------------------------MOVE TO POSITION FUNCTIONS-----------------------------------------------------------
 
-def move_to_position(packetHandler, scs_id, goal_position, moving_speed, moving_acc):
+def move_to_position(packetHandler, scs_id, goal_position, moving_speed, moving_acc, tolerance):
     # Write SC Servo goal position/moving speed/moving acc
     scs_comm_result, scs_error = packetHandler.WritePosEx(scs_id, goal_position, moving_speed, moving_acc)
     if scs_comm_result != COMM_SUCCESS:
@@ -96,33 +96,90 @@ def move_to_position(packetHandler, scs_id, goal_position, moving_speed, moving_
         # Trust moving==0 as "arrived" once we've seen it move, OR if we're already
         # within the servo's dead zone (it may never set moving==1 if the goal is
         # close enough that it decides no move is needed).
-        if moving == 0 and (has_moved or abs(scs_present_position - goal_position) <= SCS_POSITION_TOLERANCE):
+        if moving == 0 and (has_moved or abs(scs_present_position - goal_position) <= tolerance):
             break
+
+def move_all_to_positions(packetHandler, motors, goal_positions):
+    # goal_positions: {scs_id: goal_position}
+    # motors: {scs_id: {"moving_speed":..., "moving_acc":..., "tolerance":...}}
+
+    # Queue every servo's goal position/speed/acc, then send them all in one
+    # bus transaction so the motors start moving together instead of in sequence.
+    for scs_id, goal_position in goal_positions.items():
+        cfg = motors[scs_id]
+        packetHandler.SyncWritePosEx(scs_id, goal_position, cfg["moving_speed"], cfg["moving_acc"])
+
+    scs_comm_result = packetHandler.groupSyncWrite.txPacket()
+    if scs_comm_result != COMM_SUCCESS:
+        print("[SyncWrite] %s" % packetHandler.getTxRxResult(scs_comm_result))
+    packetHandler.groupSyncWrite.clearParam()
+
+    # Poll every servo in a round-robin until all of them have arrived.
+    has_moved = {scs_id: False for scs_id in goal_positions}
+    arrived = {scs_id: False for scs_id in goal_positions}
+
+    while not all(arrived.values()):
+        for scs_id, goal_position in goal_positions.items():
+            if arrived[scs_id]:
+                continue
+
+            scs_present_position, scs_present_speed, scs_comm_result, scs_error = packetHandler.ReadPosSpeed(scs_id)
+            if scs_comm_result != COMM_SUCCESS:
+                print(packetHandler.getTxRxResult(scs_comm_result))
+                continue
+            else:
+                print("[ID:%03d] GoalPos:%d PresPos:%d PresSpd:%d" % (scs_id, goal_position, scs_present_position, scs_present_speed))
+            if scs_error != 0:
+                print(packetHandler.getRxPacketError(scs_error))
+
+            moving, scs_comm_result, scs_error = packetHandler.ReadMoving(scs_id)
+            if scs_comm_result != COMM_SUCCESS:
+                print(packetHandler.getTxRxResult(scs_comm_result))
+                continue
+
+            if moving == 1:
+                has_moved[scs_id] = True
+
+            tolerance = motors[scs_id]["tolerance"]
+            if moving == 0 and (has_moved[scs_id] or abs(scs_present_position - goal_position) <= tolerance):
+                arrived[scs_id] = True
 
 #-------------------------------------------------------INITIALIZE SERVO SETTINGS-------------------------------------------------
 
-# Default setting
-SCS_ID                          = 9                                 # SC Servo ID : 10
 BAUDRATE                        = 1000000                           # SC Servo default baudrate : 1000000 (1 Mbps)
 DEVICENAME                      = '/dev/tty.usbmodem5AAF2197651'    # Check which port is being used on your controller
                                                                 # ex) Windows: "COM1"   Linux: "/dev/ttyUSB0" Mac: "/dev/tty.usbserial-*"
-SCS_MOVING_SPEED                = 1200                              # SC Servo moving speed (2400 steps/sec)
-SCS_MOVING_ACC                  = 10                                # SC Servo moving acc (50 steps/sec^2)
 
-SCS_POSITION_TOLERANCE          = 3                                 # Dead-zone: positions within this range count as "arrived"
-DESIRED_CENTER_RAW              = 3385                              # The raw position that should become the new center
-CORRECTION                      = DESIRED_CENTER_RAW - 2048         # The position correction to be applied
 SCS_CALIBRATED_CENTER           = 2048                              # The position value that becomes the "center" position after correction
 
-print(f"SC Servo ID: {SCS_ID}")
+# Per-motor configuration. Fill in the desired center rod position, range,
+# moving speed, and moving acc for each of the four motors before running.
+MOTORS = {
+    7:  {"desired_center_raw": 2750, "range": 600, "moving_speed": 1200, "moving_acc": 10, "tolerance": 3},
+    8:  {"desired_center_raw": 1750, "range": 800, "moving_speed": 1200, "moving_acc": 10, "tolerance": 3},
+    9:  {"desired_center_raw": 3385, "range": 800, "moving_speed": 1200, "moving_acc": 10, "tolerance": 3},
+    10: {"desired_center_raw": 3860, "range": 800, "moving_speed": 1200, "moving_acc": 10, "tolerance": 3},
+}
+
+# Derive per-motor correction/min/max from the config above
+for scs_id, cfg in MOTORS.items():
+    cfg["correction"]    = cfg["desired_center_raw"] - SCS_CALIBRATED_CENTER
+    cfg["min_position"]  = SCS_CALIBRATED_CENTER - cfg["range"]
+    cfg["max_position"]  = SCS_CALIBRATED_CENTER + cfg["range"]
+
 print(f"SC Servo BAUDRATE: {BAUDRATE}")
 print(f"SC Servo DEVICENAME: {DEVICENAME}")
-print(f"SC Servo Moving Speed: {SCS_MOVING_SPEED}")
-print(f"SC Servo Moving Acc: {SCS_MOVING_ACC}")
-print(f"SC Servo Position Tolerance: {SCS_POSITION_TOLERANCE}")
-print(f"SC Servo Desired Center (Raw): {DESIRED_CENTER_RAW}")
-print(f"SC Servo Correction: {CORRECTION}")
 print(f"SC Servo Calibrated Center: {SCS_CALIBRATED_CENTER}")
+for scs_id, cfg in MOTORS.items():
+    print(f"--- Motor ID {scs_id} ---")
+    print(f"  Desired Center (Raw): {cfg['desired_center_raw']}")
+    print(f"  Range From Center: {cfg['range']}")
+    print(f"  Moving Speed: {cfg['moving_speed']}")
+    print(f"  Moving Acc: {cfg['moving_acc']}")
+    print(f"  Position Tolerance: {cfg['tolerance']}")
+    print(f"  Correction: {cfg['correction']}")
+    print(f"  Minimum Position: {cfg['min_position']}")
+    print(f"  Maximum Position: {cfg['max_position']}")
 print("")
 
 #--------------------------------------------------PORT AND PACKET HANDLER INITIALIZATION-------------------------------------
@@ -139,7 +196,6 @@ print("Port Handler Initialized")
 packetHandler = sms_sts(portHandler)
 print("Packet Handler Initialized")
 
-time.sleep(5)
 
 # Open port with error checking
 if portHandler.openPort():
@@ -163,36 +219,63 @@ print("")
 
 #------------------------------------------------------------POSITION CORRECTION----------------------------------------------
 
-# Move to the desired physical orientation first
-print(f"Moving to target physical center angle ({DESIRED_CENTER_RAW})...")
-move_to_position(packetHandler, SCS_ID, DESIRED_CENTER_RAW, SCS_MOVING_SPEED, SCS_MOVING_ACC)
-time.sleep(2.0) # Ensure it has completely stopped vibrating
+# Move all motors to their desired physical orientation first, simultaneously
+print("Moving all motors to their target physical center angle...")
+move_all_to_positions(packetHandler, MOTORS, {scs_id: cfg["desired_center_raw"] for scs_id, cfg in MOTORS.items()})
+time.sleep(2.0) # Ensure they have completely stopped vibrating
 
 print("--- Starting Offset Calibration Process ---")
 
-# Step 1: Unlock EEPROM Configuration Memory (Address 55 = 0)
-setSetting(address=55, value=0, num_bytes=1, name="EEPROM Lock")
-time.sleep(0.1)
+for scs_id, cfg in MOTORS.items():
+    print(f"-- Motor ID {scs_id} --")
 
-# Step 2: Write the offset delta to Register 31 (2 Bytes)
-setSetting(address=31, value=CORRECTION, num_bytes=2, name="Position Offset (OFS)")
-time.sleep(0.1)
+    # Step 1: Unlock EEPROM Configuration Memory (Address 55 = 0)
+    setSetting(scs_id, address=55, value=0, num_bytes=1, name="EEPROM Lock")
+    time.sleep(0.1)
 
-# Step 3: Lock EEPROM back down (Address 55 = 1) to protect the memory
-setSetting(address=55, value=1, num_bytes=1, name="EEPROM Lock")
-time.sleep(0.2)
+    # Step 2: Write the offset delta to Register 31 (2 Bytes)
+    setSetting(scs_id, address=31, value=cfg["correction"], num_bytes=2, name="Position Offset (OFS)")
+    time.sleep(0.1)
 
-# Step 4: Verify the offset was written successfully
-getSetting(address=31, num_bytes=2, name="Verified Offset")
+    # Step 3: Lock EEPROM back down (Address 55 = 1) to protect the memory
+    setSetting(scs_id, address=55, value=1, num_bytes=1, name="EEPROM Lock")
+    time.sleep(0.2)
 
-# Step 5: Move to the newly calibrated center and confirm it reads 2048
-print("Moving to calibrated center...")
-move_to_position(packetHandler, SCS_ID, SCS_CALIBRATED_CENTER, SCS_MOVING_SPEED, SCS_MOVING_ACC)
+    # Step 4: Verify the offset was written successfully
+    getSetting(scs_id, address=31, num_bytes=2, name="Verified Offset")
 
-scs_present_position, _, _, _ = packetHandler.ReadPosSpeed(SCS_ID)
-print(f"Present position after calibration: {scs_present_position}")
+# Step 5: Move all motors to the newly calibrated center and confirm they read 2048
+print("Moving all motors to calibrated center...")
+move_all_to_positions(packetHandler, MOTORS, {scs_id: SCS_CALIBRATED_CENTER for scs_id in MOTORS})
+
+for scs_id in MOTORS:
+    scs_present_position, _, _, _ = packetHandler.ReadPosSpeed(scs_id)
+    print(f"[ID:{scs_id:03d}] Present position after calibration: {scs_present_position}")
 
 print(f"--- Calibration Complete --- \n")
+time.sleep(2)
+
+#------------------------------------------------------------RANGE OF MOTION CHECK--------------------------------------------
+
+print("--- Verifying Range of Motion ---")
+
+print("Moving all motors to their minimum position...")
+move_all_to_positions(packetHandler, MOTORS, {scs_id: cfg["min_position"] for scs_id, cfg in MOTORS.items()})
+time.sleep(2.0)
+
+print("Moving all motors to calibrated center...")
+move_all_to_positions(packetHandler, MOTORS, {scs_id: SCS_CALIBRATED_CENTER for scs_id in MOTORS})
+time.sleep(2.0)
+
+print("Moving all motors to their maximum position...")
+move_all_to_positions(packetHandler, MOTORS, {scs_id: cfg["max_position"] for scs_id, cfg in MOTORS.items()})
+time.sleep(2.0)
+
+print("Moving all motors to calibrated center...")
+move_all_to_positions(packetHandler, MOTORS, {scs_id: SCS_CALIBRATED_CENTER for scs_id in MOTORS})
+time.sleep(2.0)
+
+print("--- Range of Motion Check Complete --- \n")
 
 portHandler.closePort()
 print("Port Closed")
