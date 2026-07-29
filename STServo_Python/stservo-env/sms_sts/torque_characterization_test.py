@@ -553,18 +553,28 @@ try:
         print(f"\n=== Cycle {cycle}/{NUM_CYCLES} ===")
 
         events.append((round(time.time() - t0, 3), "-> MIN"))
+
         move_to_position_with_logging(SCS_ID, SCS_MIN_POSITION, SCS_MOVING_SPEED, SCS_MOVING_ACC,
                                        "moving_to_min", cycle, mass_g, DEFAULT_ABORT_CURRENT_MA,
                                        csv_writer, csv_file, samples, t0)
+    
         hold_with_logging(SCS_ID, HOLD_SECONDS, "holding_min", SCS_MIN_POSITION, cycle, mass_g,
                            DEFAULT_ABORT_CURRENT_MA, csv_writer, csv_file, samples, t0)
 
         events.append((round(time.time() - t0, 3), "-> MAX"))
+
         move_to_position_with_logging(SCS_ID, SCS_MAX_POSITION, SCS_MOVING_SPEED, SCS_MOVING_ACC,
                                        "moving_to_max", cycle, mass_g, DEFAULT_ABORT_CURRENT_MA,
                                        csv_writer, csv_file, samples, t0)
+        
         hold_with_logging(SCS_ID, HOLD_SECONDS, "holding_max", SCS_MAX_POSITION, cycle, mass_g,
-                           DEFAULT_ABORT_CURRENT_MA, csv_writer, csv_file, samples, t0)
+                            DEFAULT_ABORT_CURRENT_MA, csv_writer, csv_file, samples, t0)
+
+    events.append((round(time.time() - t0, 3), "-> CENTER"))
+
+    move_to_position_with_logging(SCS_ID, SCS_CALIBRATED_CENTER, SCS_MOVING_SPEED, SCS_MOVING_ACC,
+                                   "returning_to_center", NUM_CYCLES, mass_g, DEFAULT_ABORT_CURRENT_MA,
+                                   csv_writer, csv_file, samples, t0)
 
     print("\nExperiment complete.")
 
