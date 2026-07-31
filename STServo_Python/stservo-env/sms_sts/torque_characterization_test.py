@@ -40,31 +40,31 @@ print("SC Servo Library Imported\n")
 
 #---------------------------------------------------GET AND SET SETTINGS FUNCTIONS-----------------------------------------------------------
 
-def setSetting(address, value, num_bytes, name):
+def setSetting(scs_id, address, value, num_bytes, name):
     if num_bytes == 1:
-        scs_comm_result, scs_error = packetHandler.write1ByteTxRx(SCS_ID, address, value)
+        scs_comm_result, scs_error = packetHandler.write1ByteTxRx(scs_id, address, value)
     else:
-        scs_comm_result, scs_error = packetHandler.write2ByteTxRx(SCS_ID, address, value)
+        scs_comm_result, scs_error = packetHandler.write2ByteTxRx(scs_id, address, value)
 
     if scs_comm_result != COMM_SUCCESS:
-        print(f"[{name}] {packetHandler.getTxRxResult(scs_comm_result)}")
+        print(f"[ID:{scs_id:03d}][{name}] {packetHandler.getTxRxResult(scs_comm_result)}")
     elif scs_error != 0:
-        print(f"[{name}] {packetHandler.getRxPacketError(scs_error)}")
+        print(f"[ID:{scs_id:03d}][{name}] {packetHandler.getRxPacketError(scs_error)}")
     else:
-        print(f"[{name}] Set to {value}")
+        print(f"[ID:{scs_id:03d}][{name}] Set to {value}")
 
-def getSetting(address, num_bytes, name):
+def getSetting(scs_id, address, num_bytes, name):
     if num_bytes == 1:
-        value, scs_comm_result, scs_error = packetHandler.read1ByteTxRx(SCS_ID, address)
+        value, scs_comm_result, scs_error = packetHandler.read1ByteTxRx(scs_id, address)
     else:
-        value, scs_comm_result, scs_error = packetHandler.read2ByteTxRx(SCS_ID, address)
+        value, scs_comm_result, scs_error = packetHandler.read2ByteTxRx(scs_id, address)
 
     if scs_comm_result != COMM_SUCCESS:
-        print(f"[{name}] {packetHandler.getTxRxResult(scs_comm_result)}")
+        print(f"[ID:{scs_id:03d}][{name}] {packetHandler.getTxRxResult(scs_comm_result)}")
     elif scs_error != 0:
-        print(f"[{name}] {packetHandler.getRxPacketError(scs_error)}")
+        print(f"[ID:{scs_id:03d}][{name}] {packetHandler.getRxPacketError(scs_error)}")
     else:
-        print(f"[{name}] Read {value}")
+        print(f"[ID:{scs_id:03d}][{name}] Read {value}")
     return value
 
 #-----------------------------------------------------MOVE TO POSITION FUNCTION-----------------------------------------------------------
@@ -172,7 +172,7 @@ def read_telemetry(scs_id):
         "present_temperature": data[7],
         "status_reg_raw": data[9],
         "moving": data[10],
-        "present_current_ma": packetHandler.scs_tohost(word(13), 15),
+        "present_current_ma": packetHandler.scs_tohost(word(13), 15) * 6.5,  # 6.5mA units
     }
     return telemetry, comm_result, error
 
@@ -209,7 +209,7 @@ def sample_and_log(scs_id, phase, goal_position, mass_g, abort_current_ma,
     samples.append(row)
 
     print(f"  cycle {cycle:2d} {phase:12s} goal={goal_position:5d} pos={telemetry['present_position']:5d} "
-          f"torque={telemetry['present_torque_pct']:6.1f}% cur={telemetry['present_current_ma']:5d}mA "
+          f"torque={telemetry['present_torque_pct']:6.1f}% cur={telemetry['present_current_ma']:5.0f}mA "
           f"spd={telemetry['present_speed']:5d} temp={telemetry['present_temperature']:3d}C "
           f"volt={telemetry['present_voltage']:4.1f}V moving={telemetry['moving']}")
 
@@ -225,22 +225,41 @@ def sample_and_log(scs_id, phase, goal_position, mass_g, abort_current_ma,
 
 #-------------------------------------------------------INITIALIZE SERVO SETTINGS-------------------------------------------------
 
-# Default setting
-SCS_ID                          = 9                                 # SC Servo ID : 10
+# Bus setup - all four motors are wired in series on the same port/baudrate. Their raw centers,
+# ranges, speed, and acc are carried over from positionCalibration.py so this script can apply the
+# same safety limits (temp/voltage/dead-zone/angle) to every motor on the bus. Only ACTIVE_TEST_ID
+# is actually driven through the cyclic loading test for now.
 BAUDRATE                        = 1000000                           # SC Servo default baudrate : 1000000 (1 Mbps)
 DEVICENAME                      = '/dev/tty.usbmodem5AAF2197651'    # Check which port is being used on your controller
                                                                 # ex) Windows: "COM1"   Linux: "/dev/ttyUSB0" Mac: "/dev/tty.usbserial-*"
-SCS_MOVING_SPEED                = 1200                              # SC Servo moving speed (2400 steps/sec)
-SCS_MOVING_ACC                  = 10                                # SC Servo moving acc (50 steps/sec^2)
+SCS_CALIBRATED_CENTER           = 2048                              # The position value that becomes the "center" position after correction
+HARD_ANGLE_LIMIT_MARGIN         = 50
+
+MOTORS = {
+    7:  {"desired_center_raw": 2750, "range": 600, "moving_speed": 1200, "moving_acc": 10},
+    8:  {"desired_center_raw": 1750, "range": 700, "moving_speed": 1200, "moving_acc": 10},
+    9:  {"desired_center_raw": 3385, "range": 800, "moving_speed": 1200, "moving_acc": 10},
+    10: {"desired_center_raw": 3860, "range": 800, "moving_speed": 1200, "moving_acc": 10},
+}
+
+# Derive per-motor correction/min/max from the config above
+for _scs_id, _cfg in MOTORS.items():
+    _cfg["correction"]   = _cfg["desired_center_raw"] - SCS_CALIBRATED_CENTER
+    _cfg["min_position"] = SCS_CALIBRATED_CENTER - _cfg["range"]
+    _cfg["max_position"] = SCS_CALIBRATED_CENTER + _cfg["range"]
+
+# The only motor actually driven/logged by the test loop below
+ACTIVE_TEST_ID                  = 9
+SCS_ID                          = ACTIVE_TEST_ID                    # Kept for readability at existing call sites
+SCS_MOVING_SPEED                = MOTORS[SCS_ID]["moving_speed"]
+SCS_MOVING_ACC                  = MOTORS[SCS_ID]["moving_acc"]
 
 SCS_POSITION_TOLERANCE          = 3                                 # Dead-zone: positions within this range count as "arrived"
-DESIRED_CENTER_RAW              = 3385                              # The raw position that should become the new center
-RANGE                           = 800                               # The maximum offset from the center
-CORRECTION                      = DESIRED_CENTER_RAW - 2048         # The position correction to be applied
-SCS_CALIBRATED_CENTER           = 2048                              # The position value that becomes the "center" position after correction
-SCS_MIN_POSITION                = SCS_CALIBRATED_CENTER - RANGE     # The minimum position value after correction
-SCS_MAX_POSITION                = SCS_CALIBRATED_CENTER + RANGE     # The maximum position value after correction
-HARD_ANGLE_LIMIT_MARGIN         = 50
+DESIRED_CENTER_RAW              = MOTORS[SCS_ID]["desired_center_raw"]  # The raw position that should become the new center
+RANGE                           = MOTORS[SCS_ID]["range"]           # The maximum offset from the center
+CORRECTION                      = MOTORS[SCS_ID]["correction"]      # The position correction to be applied
+SCS_MIN_POSITION                = MOTORS[SCS_ID]["min_position"]    # The minimum position value after correction
+SCS_MAX_POSITION                = MOTORS[SCS_ID]["max_position"]    # The maximum position value after correction
 
 MAX_TEMP                        = 55                                # Maxmimum temperature in degrees celcius
 MAX_INPUT_VOLTAGE               = 130                               # Maximum input voltage in 0.1V units
@@ -258,7 +277,7 @@ SAMPLE_PERIOD                   = 1.0 / SAMPLE_HZ
 # Conservative runtime torque cap applied via SRAM Torque_Limit (address 48) for the whole test, as
 # a safety backstop independent of whatever final EPROM protection values this experiment informs.
 # 0-1000 = 0.0%-100.0% of max torque, same units as SCS_TORQUE_LIMIT in template.py.
-TEST_TORQUE_LIMIT               = 250                                # 25.0% of max force
+TEST_TORQUE_LIMIT               = 100                                # 25.0% of max force
 DEFAULT_ABORT_CURRENT_MA        = 900                                 # Auto-abort if present current exceeds this many mA
 
 # EEPROM Addresses not already defined in scservo_sdk/sms_sts.py's control table
@@ -285,19 +304,19 @@ CSV_COLUMNS = [
     "status_reg_raw", "packet_error_flags", "mass_g",
 ]
 
-print(f"SC Servo ID: {SCS_ID}")
 print(f"SC Servo BAUDRATE: {BAUDRATE}")
 print(f"SC Servo DEVICENAME: {DEVICENAME}")
-print(f"SC Servo Moving Speed: {SCS_MOVING_SPEED}")
-print(f"SC Servo Moving Acc: {SCS_MOVING_ACC}")
-print(f"SC Servo Position Tolerance: {SCS_POSITION_TOLERANCE}")
-print(f"SC Servo Desired Center (Raw): {DESIRED_CENTER_RAW}")
-print(f"SC Servo Range From Center: {RANGE}")
-print(f"SC Servo Correction: {CORRECTION}")
 print(f"SC Servo Calibrated Center: {SCS_CALIBRATED_CENTER}")
-print(f"SC Servo Minimum Position: {SCS_MIN_POSITION}")
-print(f"SC Servo Maximum Position: {SCS_MAX_POSITION}")
 print(f"SC Servo Hard Angle Limit Margin: {HARD_ANGLE_LIMIT_MARGIN}")
+for _scs_id, _cfg in MOTORS.items():
+    print(f"--- Motor ID {_scs_id} {'(ACTIVE TEST MOTOR)' if _scs_id == ACTIVE_TEST_ID else '(safety limits only, not driven)'} ---")
+    print(f"  Desired Center (Raw): {_cfg['desired_center_raw']}")
+    print(f"  Range From Center: {_cfg['range']}")
+    print(f"  Moving Speed: {_cfg['moving_speed']}")
+    print(f"  Moving Acc: {_cfg['moving_acc']}")
+    print(f"  Correction: {_cfg['correction']}")
+    print(f"  Minimum Position: {_cfg['min_position']}")
+    print(f"  Maximum Position: {_cfg['max_position']}")
 print(f"SC Servo Maximum Temperature: {MAX_TEMP}")
 print(f"SC Servo Maximum Input Voltage: {MAX_INPUT_VOLTAGE}")
 print(f"SC Servo Minimum Input Voltage: {MIN_INPUT_VOLTAGE}")
@@ -325,7 +344,6 @@ print("Port Handler Initialized")
 packetHandler = sms_sts(portHandler)
 print("Packet Handler Initialized")
 
-time.sleep(5)
 
 # Open port with error checking
 if portHandler.openPort():
@@ -347,86 +365,55 @@ else:
 
 print("")
 
-#------------------------------------------------------------POSITION CORRECTION----------------------------------------------
-
-# Move to the desired physical orientation first
-print(f"Moving to target physical center angle ({DESIRED_CENTER_RAW})...")
-move_to_position(packetHandler, SCS_ID, DESIRED_CENTER_RAW, SCS_MOVING_SPEED, SCS_MOVING_ACC)
-time.sleep(2.0) # Ensure it has completely stopped vibrating
-
-print("--- Starting Offset Calibration Process ---")
-
-# Step 1: Unlock EEPROM Configuration Memory (Address 55 = 0)
-setSetting(address=55, value=0, num_bytes=1, name="EEPROM Lock")
-time.sleep(0.1)
-
-# Step 2: Write the positive offset delta (1702) to Register 31 (2 Bytes)
-setSetting(address=31, value=CORRECTION, num_bytes=2, name="Position Offset (OFS)")
-time.sleep(0.1)
-
-# Step 3: Lock EEPROM back down (Address 55 = 1) to protect the memory
-setSetting(address=55, value=1, num_bytes=1, name="EEPROM Lock")
-time.sleep(0.2)
-
-# Step 4: Verify the offset was written successfully
-getSetting(address=31, num_bytes=2, name="Verified Offset")
-
-# Verify that the servo now reads its current resting position as 2048
-scs_present_position, _, _, _ = packetHandler.ReadPosSpeed(SCS_ID)
-print(f"Current physical position reading after calibration reboot: {scs_present_position}")
-
-# Now this call will execute smoothly. The servo is already physically there,
-# and its internal register accurately confirms it is sitting at 2048.
-print("Confirming alignment with center target...")
-move_to_position(packetHandler, SCS_ID, SCS_CALIBRATED_CENTER, SCS_MOVING_SPEED, SCS_MOVING_ACC)
-
-
-
-print(f"--- Calibration Complete --- \n")
-
-time.sleep(5)
-
 #---------------------------------------------------------SERVO SETTINGS------------------------------------------------------
+# Applied to all four motors on the bus (not just the active test motor), so every servo has correct
+# temp/voltage/dead-zone/hardware angle limits regardless of which one is actually driven below.
 
-# EEPROM must be unlocked before these addresses can be written
-packetHandler.unLockEprom(SCS_ID)
+for _scs_id, _cfg in MOTORS.items():
+    print(f"-- Motor ID {_scs_id} --")
 
-#----------------------------------Apply Settings
+    # EEPROM must be unlocked before these addresses can be written
+    packetHandler.unLockEprom(_scs_id)
 
-setSetting(address=SMS_STS_MAX_TEMPERATURE_LIMIT, value = MAX_TEMP, num_bytes = 1, name = "Maximum Temperature")
-setSetting(address=SMS_STS_MAX_VOLTAGE_LIMIT, value = MAX_INPUT_VOLTAGE, num_bytes = 1, name = "Maximum Input Voltage")
-setSetting(address=SMS_STS_MIN_VOLTAGE_LIMIT, value = MIN_INPUT_VOLTAGE, num_bytes = 1, name = "Minimum Input Voltage")
-setSetting(address=SMS_STS_CW_DEAD, value = CW_INSENSITIVE_ZONE, num_bytes = 1, name = "Clockwise Insensitive Zone")
-setSetting(address=SMS_STS_CCW_DEAD, value = CCW_INSENSITIVE_ZONE, num_bytes = 1, name = "Counterclockwise Insensitive Zone")
-setSetting(address=SMS_STS_MAX_ANGLE_LIMIT_L, value = SCS_MAX_POSITION + HARD_ANGLE_LIMIT_MARGIN, num_bytes = 2, name = "Max Hardware Angle Limit")
-setSetting(address=SMS_STS_MIN_ANGLE_LIMIT_L, value = SCS_MIN_POSITION - HARD_ANGLE_LIMIT_MARGIN, num_bytes = 2, name = "Min Hardware Angle Limit")
+    #----------------------------------Apply Settings
 
-#-----------------------------------------------
+    setSetting(_scs_id, address=SMS_STS_MAX_TEMPERATURE_LIMIT, value = MAX_TEMP, num_bytes = 1, name = "Maximum Temperature")
+    setSetting(_scs_id, address=SMS_STS_MAX_VOLTAGE_LIMIT, value = MAX_INPUT_VOLTAGE, num_bytes = 1, name = "Maximum Input Voltage")
+    setSetting(_scs_id, address=SMS_STS_MIN_VOLTAGE_LIMIT, value = MIN_INPUT_VOLTAGE, num_bytes = 1, name = "Minimum Input Voltage")
+    setSetting(_scs_id, address=SMS_STS_CW_DEAD, value = CW_INSENSITIVE_ZONE, num_bytes = 1, name = "Clockwise Insensitive Zone")
+    setSetting(_scs_id, address=SMS_STS_CCW_DEAD, value = CCW_INSENSITIVE_ZONE, num_bytes = 1, name = "Counterclockwise Insensitive Zone")
+    setSetting(_scs_id, address=SMS_STS_MAX_ANGLE_LIMIT_L, value = _cfg["max_position"] + HARD_ANGLE_LIMIT_MARGIN, num_bytes = 2, name = "Max Hardware Angle Limit")
+    setSetting(_scs_id, address=SMS_STS_MIN_ANGLE_LIMIT_L, value = _cfg["min_position"] - HARD_ANGLE_LIMIT_MARGIN, num_bytes = 2, name = "Min Hardware Angle Limit")
 
-# Re-lock EEPROM to protect the settings just written
-packetHandler.LockEprom(SCS_ID)
+    #-----------------------------------------------
 
-#----------------------------------Verify Settings
+    # Re-lock EEPROM to protect the settings just written
+    packetHandler.LockEprom(_scs_id)
 
-getSetting(address=SMS_STS_MAX_TEMPERATURE_LIMIT, num_bytes=1, name="Maximum Temperature")
-getSetting(address=SMS_STS_MAX_VOLTAGE_LIMIT, num_bytes=1, name="Maximum Input Voltage")
-getSetting(address=SMS_STS_MIN_VOLTAGE_LIMIT, num_bytes=1, name="Minimum Input Voltage")
-getSetting(address=SMS_STS_CW_DEAD, num_bytes=1, name="Clockwise Insensitive Zone")
-getSetting(address=SMS_STS_CCW_DEAD, num_bytes=1, name="Counterclockwise Insensitive Zone")
-getSetting(address=SMS_STS_MAX_ANGLE_LIMIT_L, num_bytes=2, name="Max Hardware Angle Limit")
-getSetting(address=SMS_STS_MIN_ANGLE_LIMIT_L, num_bytes=2, name="Min Hardware Angle Limit")
+    #----------------------------------Verify Settings
+
+    getSetting(_scs_id, address=SMS_STS_MAX_TEMPERATURE_LIMIT, num_bytes=1, name="Maximum Temperature")
+    getSetting(_scs_id, address=SMS_STS_MAX_VOLTAGE_LIMIT, num_bytes=1, name="Maximum Input Voltage")
+    getSetting(_scs_id, address=SMS_STS_MIN_VOLTAGE_LIMIT, num_bytes=1, name="Minimum Input Voltage")
+    getSetting(_scs_id, address=SMS_STS_CW_DEAD, num_bytes=1, name="Clockwise Insensitive Zone")
+    getSetting(_scs_id, address=SMS_STS_CCW_DEAD, num_bytes=1, name="Counterclockwise Insensitive Zone")
+    getSetting(_scs_id, address=SMS_STS_MAX_ANGLE_LIMIT_L, num_bytes=2, name="Max Hardware Angle Limit")
+    getSetting(_scs_id, address=SMS_STS_MIN_ANGLE_LIMIT_L, num_bytes=2, name="Min Hardware Angle Limit")
 
 #------------------------------------------------
 
-time.sleep(10)
-
+# ID 8 isn't the motor under test, but it shares the instrument with the active test motor, so it's
+# moved to its minimum position before the run starts and returned to center once the run ends.
+# Both moves happen only after the safety disclaimer is confirmed (see print_safety_reminder()
+# call in the main control loop below).
+OUT_OF_WAY_ID = 8
 
 #-----------------------------------------------------CSV LOGGING SETUP-----------------------------------------------------------
 
-def open_csv(mass_g):
+def open_csv(mass_g, torque_limit_pct):
     os.makedirs(DATA_DIR, exist_ok=True)
     timestamp = time.strftime("%Y%m%d_%H%M%S")
-    path = os.path.join(DATA_DIR, f"torque_test_{mass_g:g}g_{timestamp}.csv")
+    path = os.path.join(DATA_DIR, f"torque_test_{mass_g:g}g_tl{torque_limit_pct:g}pct_{timestamp}.csv")
     f = open(path, "w", newline="")
     writer = csv.writer(f)
     writer.writerow(CSV_COLUMNS)
@@ -456,7 +443,7 @@ def print_summary(samples):
     print(f"  {'overall':14s} max |current|: {max(all_currents, key=abs):.0f} mA   max |torque|: {max(all_torques, key=abs):.1f}%")
 
 
-def plot_telemetry(samples, events, mass_g, csv_path):
+def plot_telemetry(samples, events, mass_g, torque_limit_pct, csv_path):
     if not samples:
         print("\nNo samples were collected - skipping graph.")
         return
@@ -476,7 +463,9 @@ def plot_telemetry(samples, events, mass_g, csv_path):
     ax_torque.plot(times, torques, color=TORQUE_COLOR, linewidth=2)
     ax_torque.set_ylabel("Torque (% of max)")
     ax_torque.axhline(0, color=EVENT_COLOR, linewidth=0.75, alpha=0.4)
-    ax_torque.set_title(f"Servo ID {SCS_ID} Torque Characterization - Mass: {mass_g:g} g", pad=14)
+    ax_torque.set_title(
+        f"Servo ID {SCS_ID} Torque Characterization - Mass: {mass_g:g} g, Torque Limit: {torque_limit_pct:g}%",
+        pad=14)
 
     ax_current.plot(times, currents, color=CURRENT_COLOR, linewidth=2)
     ax_current.set_ylabel("Current (mA)")
@@ -526,6 +515,7 @@ csv_file = None
 csv_path = None
 events = []
 mass_g = 0.0
+out_of_way_moved = False   # Only send OUT_OF_WAY_ID back to center in `finally` if it was actually moved out
 
 try:
     # Ask for the hanging test mass - the only interactive input this script needs.
@@ -539,12 +529,18 @@ try:
 
     print_safety_reminder()
 
-    csv_file, csv_writer, csv_path = open_csv(mass_g)
+    print(f"Moving Motor ID {OUT_OF_WAY_ID} to its maximum position...")
+    move_to_position(packetHandler, OUT_OF_WAY_ID, MOTORS[OUT_OF_WAY_ID]["max_position"],
+                      MOTORS[OUT_OF_WAY_ID]["moving_speed"], MOTORS[OUT_OF_WAY_ID]["moving_acc"])
+    out_of_way_moved = True
+    print("")
+
+    csv_file, csv_writer, csv_path = open_csv(mass_g, TEST_TORQUE_LIMIT / 10.0)
     print(f"Logging to {csv_path}")
 
     # Conservative runtime torque cap + explicit torque enable for the duration of the test.
-    setSetting(address=STS_TORQUE_LIMIT_L, value=TEST_TORQUE_LIMIT, num_bytes=2, name="Runtime Torque Limit")
-    setSetting(address=SMS_STS_TORQUE_ENABLE, value=1, num_bytes=1, name="Torque Enable")
+    setSetting(SCS_ID, address=STS_TORQUE_LIMIT_L, value=TEST_TORQUE_LIMIT, num_bytes=2, name="Runtime Torque Limit")
+    setSetting(SCS_ID, address=SMS_STS_TORQUE_ENABLE, value=1, num_bytes=1, name="Torque Enable")
 
     t0 = time.time()
     events = []  # (elapsed_s, label) goal-change markers for the graph
@@ -586,11 +582,17 @@ except KeyboardInterrupt:
 #-----------------------------------------------------ENDING THE SCRIPT-------------------------------------------------------
 
 finally:
-    setSetting(address=SMS_STS_TORQUE_ENABLE, value=0, num_bytes=1, name="Torque Enable")
+    setSetting(SCS_ID, address=SMS_STS_TORQUE_ENABLE, value=0, num_bytes=1, name="Torque Enable")
     print_summary(samples)
     if csv_file is not None:
         csv_file.close()
     if samples and csv_path is not None:
-        plot_telemetry(samples, events, mass_g, csv_path)
+        plot_telemetry(samples, events, mass_g, TEST_TORQUE_LIMIT / 10.0, csv_path)
+
+    if out_of_way_moved:
+        print(f"Returning Motor ID {OUT_OF_WAY_ID} to calibrated center...")
+        move_to_position(packetHandler, OUT_OF_WAY_ID, SCS_CALIBRATED_CENTER,
+                          MOTORS[OUT_OF_WAY_ID]["moving_speed"], MOTORS[OUT_OF_WAY_ID]["moving_acc"])
+
     portHandler.closePort()
     print("Port Closed")
