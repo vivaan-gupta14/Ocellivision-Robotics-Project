@@ -157,8 +157,8 @@ SCS_CALIBRATED_CENTER           = 2048                              # The positi
 MOTORS = {
     7:  {"desired_center_raw": 2750, "range": 600, "moving_speed": 1200, "moving_acc": 10, "tolerance": 3},
     8:  {"desired_center_raw": 1750, "range": 700, "moving_speed": 1200, "moving_acc": 10, "tolerance": 3},
-    9:  {"desired_center_raw": 3385, "range": 800, "moving_speed": 1200, "moving_acc": 10, "tolerance": 3},
-    10: {"desired_center_raw": 3860, "range": 800, "moving_speed": 1200, "moving_acc": 10, "tolerance": 3},
+    9:  {"desired_center_raw": 3385, "range": 1400, "moving_speed": 1200, "moving_acc": 10, "tolerance": 3},
+    10: {"desired_center_raw": 3860, "range": 1400, "moving_speed": 1200, "moving_acc": 10, "tolerance": 3},
 }
 
 # Derive per-motor correction/min/max from the config above

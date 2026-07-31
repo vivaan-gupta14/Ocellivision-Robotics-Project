@@ -233,13 +233,13 @@ BAUDRATE                        = 1000000                           # SC Servo d
 DEVICENAME                      = '/dev/tty.usbmodem5AAF2197651'    # Check which port is being used on your controller
                                                                 # ex) Windows: "COM1"   Linux: "/dev/ttyUSB0" Mac: "/dev/tty.usbserial-*"
 SCS_CALIBRATED_CENTER           = 2048                              # The position value that becomes the "center" position after correction
-HARD_ANGLE_LIMIT_MARGIN         = 50
+HARD_ANGLE_LIMIT_MARGIN         = 100
 
 MOTORS = {
     7:  {"desired_center_raw": 2750, "range": 600, "moving_speed": 1200, "moving_acc": 10},
     8:  {"desired_center_raw": 1750, "range": 700, "moving_speed": 1200, "moving_acc": 10},
-    9:  {"desired_center_raw": 3385, "range": 800, "moving_speed": 1200, "moving_acc": 10},
-    10: {"desired_center_raw": 3860, "range": 800, "moving_speed": 1200, "moving_acc": 10},
+    9:  {"desired_center_raw": 3385, "range": 1400, "moving_speed": 1200, "moving_acc": 10},
+    10: {"desired_center_raw": 3860, "range": 1400, "moving_speed": 1200, "moving_acc": 10},
 }
 
 # Derive per-motor correction/min/max from the config above
@@ -269,7 +269,7 @@ CCW_INSENSITIVE_ZONE            = 1                                 # Counterclo
 
 # --------------------------------------TORQUE TEST SPECIFIC SETTINGS--------------------------------------------
 
-NUM_CYCLES                      = 5                                 # Number of min<->max cycles to run
+NUM_CYCLES                      = 1                                 # Number of min<->max cycles to run
 HOLD_SECONDS                    = 2.0                                # Dwell time at each end of travel, seconds
 SAMPLE_HZ                       = 30                                 # Telemetry sampling rate during motion/hold
 SAMPLE_PERIOD                   = 1.0 / SAMPLE_HZ
@@ -277,7 +277,7 @@ SAMPLE_PERIOD                   = 1.0 / SAMPLE_HZ
 # Conservative runtime torque cap applied via SRAM Torque_Limit (address 48) for the whole test, as
 # a safety backstop independent of whatever final EPROM protection values this experiment informs.
 # 0-1000 = 0.0%-100.0% of max torque, same units as SCS_TORQUE_LIMIT in template.py.
-TEST_TORQUE_LIMIT               = 100                                # 25.0% of max force
+TEST_TORQUE_LIMIT               = 125                                # 25.0% of max force
 DEFAULT_ABORT_CURRENT_MA        = 900                                 # Auto-abort if present current exceeds this many mA
 
 # EEPROM Addresses not already defined in scservo_sdk/sms_sts.py's control table
