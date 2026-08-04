@@ -112,6 +112,8 @@ SMS_STS_MAX_VOLTAGE_LIMIT       = 14
 SMS_STS_MIN_VOLTAGE_LIMIT       = 15
 SMS_STS_UNLOADING_CONDITION     = 19
 SMS_STS_LED_ALARM_CONDITION     = 20
+SMS_STS_ANGLE_RESOLUTION        = 30
+SMS_STS_PHASE                   = 18
 
 def writeSetting(address, value, num_bytes, name, signed=False):
     """signed=True sign-magnitude-encodes the value (bit 15 = sign) before writing.
@@ -160,11 +162,25 @@ def readSetting(address, num_bytes, name, signed=False):
 # restricts position-mode moves to by default (or from a prior calibration run leaving a
 # single-turn range in EEPROM). Setting both limits to 0 puts the servo in multi-turn mode,
 # letting WritePosEx goal positions run up to ~+/-32766 (~8 revolutions) instead of clipping
-# at +/-4095. Only these two registers are touched - no other EEPROM setting is written here.
+# at +/-4095.
+#
+# Angle Resolution (30) is set to 1 (finest step size) and Phase (18) BIT4 is set so
+# Present Position feedback reflects the larger unwrapped angle instead of wrapping every
+# revolution - same multi-turn wraparound setup as applySettingTest.py. Phase is
+# read-modify-written so other bits (e.g. direction) already set in that byte aren't clobbered.
 packetHandler.unLockEprom(SCS_ID)
 writeSetting(SMS_STS_MIN_ANGLE_LIMIT_L, 0, 2, "Min Angle Limit", signed=True)
 writeSetting(SMS_STS_MAX_ANGLE_LIMIT_L, 0, 2, "Max Angle Limit", signed=True)
+writeSetting(SMS_STS_ANGLE_RESOLUTION, 1, 1, "Angle Resolution")
+_phase, _phase_comm_result, _phase_error = packetHandler.read1ByteTxRx(SCS_ID, SMS_STS_PHASE)
+writeSetting(SMS_STS_PHASE, _phase | 0x10, 1, "Phase (wraparound bit4 set)")
 packetHandler.LockEprom(SCS_ID)
+
+# Torque Enable (SRAM, address 40) isn't touched by WritePosEx and doesn't persist reliably
+# across sessions - without this, goal-position writes ACK successfully but the servo applies
+# no holding/driving torque and never actually moves.
+writeSetting(SMS_STS_TORQUE_ENABLE, 1, 1, "Torque Enable")
+time.sleep(5)
 
 #--------------------------------------YOUR CODE HERE-----------------------------------------------------------
 
@@ -201,15 +217,20 @@ def read_key(timeout):
         return 'ESC'
     ch2 = os.read(fd, 1).decode()
     if ch2 not in ('[', 'O'):
+        print(f"[DEBUG read_key] got ESC then {ch2!r} - not '[' or 'O', dropping", end="\r\n")
         return None
     ready, _, _ = select.select([fd], [], [], ESCAPE_SEQUENCE_TIMEOUT)
     if not ready:
+        print(f"[DEBUG read_key] got ESC {ch2!r} then nothing more arrived within {ESCAPE_SEQUENCE_TIMEOUT}s, dropping", end="\r\n")
         return None
     ch3 = os.read(fd, 1).decode()
     if ch3 == 'C':
+        print(f"[DEBUG read_key] ESC {ch2!r} {ch3!r} -> RIGHT", end="\r\n")
         return 'RIGHT'
     elif ch3 == 'D':
+        print(f"[DEBUG read_key] ESC {ch2!r} {ch3!r} -> LEFT", end="\r\n")
         return 'LEFT'
+    print(f"[DEBUG read_key] ESC {ch2!r} {ch3!r} - unrecognized 3rd byte, dropping", end="\r\n")
     return None
 
 # Present_Position(56) .. Present_Current(70) are contiguous in the memory table, so one raw
@@ -403,6 +424,11 @@ try:
 
     print("\r\n=== Prismatic Joint Raw Calibration Summary ===", end="\r\n")
     print_summary()
+
+    print("\r\nApplying Torque Switch = 128 (corrects current position to 2048)...", end="\r\n")
+    writeSetting(SMS_STS_TORQUE_ENABLE, 128, 1, "Torque Switch (128 = correct current position to 2048)")
+    time.sleep(0.1)
+    readSetting(SMS_STS_PRESENT_POSITION_L, 2, "Present Position after center correction", signed=True)
 
 #--------------------------------------ENDING THE SCRIPT-------------------------------------------------------
 

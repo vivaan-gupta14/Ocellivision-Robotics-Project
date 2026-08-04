@@ -21,8 +21,8 @@ sys.path.append("..")
 from scservo_sdk import *
 
 # Default setting
-SCS_ID = 2            # SCServo ID : 4
-NEW_ID = 10             #Change the Servo ID
+SCS_ID = 1            # SCServo ID : 4
+NEW_ID = 6             #Change the Servo ID
 BAUDRATE = 1000000     #SCServo default baudrate:1000000
 DEVICENAME = '/dev/tty.usbmodem5AAF2197651'   # Check which port is being used on your controller
                        # ex) Windows: "COM1"   Linux: "/dev/ttyUSB0" Mac: "/dev/tty.usbserial-*"

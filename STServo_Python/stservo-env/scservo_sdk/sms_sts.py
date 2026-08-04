@@ -63,6 +63,7 @@ class sms_sts(protocol_packet_handler):
         self.groupSyncWrite = GroupSyncWrite(self, SMS_STS_ACC, 7)
 
     def WritePosEx(self, scs_id, position, speed, acc):
+        position = self.scs_toscs(position, 15)
         txpacket = [acc, self.scs_lobyte(position), self.scs_hibyte(position), 0, 0, self.scs_lobyte(speed), self.scs_hibyte(speed)]
         return self.writeTxRx(scs_id, SMS_STS_ACC, len(txpacket), txpacket)
 
@@ -85,10 +86,12 @@ class sms_sts(protocol_packet_handler):
         return moving, scs_comm_result, scs_error
 
     def SyncWritePosEx(self, scs_id, position, speed, acc):
+        position = self.scs_toscs(position, 15)
         txpacket = [acc, self.scs_lobyte(position), self.scs_hibyte(position), 0, 0, self.scs_lobyte(speed), self.scs_hibyte(speed)]
         return self.groupSyncWrite.addParam(scs_id, txpacket)
 
     def RegWritePosEx(self, scs_id, position, speed, acc):
+        position = self.scs_toscs(position, 15)
         txpacket = [acc, self.scs_lobyte(position), self.scs_hibyte(position), 0, 0, self.scs_lobyte(speed), self.scs_hibyte(speed)]
         return self.regWriteTxRx(scs_id, SMS_STS_ACC, len(txpacket), txpacket)
 
