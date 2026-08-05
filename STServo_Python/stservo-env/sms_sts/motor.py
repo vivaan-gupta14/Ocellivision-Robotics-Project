@@ -5,13 +5,21 @@ import sys
 sys.path.append("..")
 from scservo_sdk import *                      # Uses SC Servo SDK library
 
+# Extra EEPROM addresses not already defined in scservo_sdk/sms_sts.py's control table
+SMS_STS_ANGLE_RESOLUTION = 30
+SMS_STS_PHASE            = 18
+
+# Present_Position(56)..Present_Current(70) are contiguous in the memory table, so one raw
+# read grabs position/speed/load/voltage/temperature/moving/current in a single serial transaction.
+TELEMETRY_READ_LENGTH     = 15
+
 #-----------------------------------------------------------MOTOR CLASS---------------------------------------------------------
 
 class Motor:
 
     def __init__(self, packetHandler, id, rawCenterPosition, range, minPosition, maxPosition,
-                 speed, acceleration, positionTolerance, angleResolution,
-                 minPositionLimit, maxPositionLimit, positionMargin):
+                 speed, acceleration, positionTolerance,
+                 minPositionLimit, maxPositionLimit, positionMargin, angleResolution=1):
 
         self.packetHandler      = packetHandler        # Shared sms_sts packet handler for the bus this motor is on
 
@@ -27,6 +35,11 @@ class Motor:
         self.minPositionLimit   = minPositionLimit      # Hardware Min_Angle_Limit written to EEPROM
         self.maxPositionLimit   = maxPositionLimit      # Hardware Max_Angle_Limit written to EEPROM
         self.positionMargin     = positionMargin         # Margin added/subtracted between soft limits and hardware limits
+
+        # Only non-default Angle Resolution needs to be pushed to hardware - the servo's
+        # factory default is already 1, so motors that don't specify one stay untouched.
+        if self.angleResolution != 1:
+            self.applyAngleResolution()
 
     #---------------------------------------------------GET AND SET SETTINGS METHODS-----------------------------------------------------------
 
@@ -99,6 +112,26 @@ class Motor:
         elif scsError != 0:
             print(f"[ID:{self.id:03d}][SetPosition] {self.packetHandler.getRxPacketError(scsError)}")
 
+    def getTelemetry(self):
+        # Single combined read of every present-value register, decoded the same way
+        # torque_characterization_test.py's read_telemetry() does. Returns None on comm/servo error.
+        data, scsCommResult, scsError = self.packetHandler.readTxRx(self.id, SMS_STS_PRESENT_POSITION_L, TELEMETRY_READ_LENGTH)
+        if scsCommResult != COMM_SUCCESS or scsError != 0 or len(data) < TELEMETRY_READ_LENGTH:
+            return None
+
+        def word(offset):
+            return self.packetHandler.scs_makeword(data[offset], data[offset + 1])
+
+        return {
+            "position":    self.packetHandler.scs_tohost(word(0), 15),
+            "speed":       self.packetHandler.scs_tohost(word(2), 15),
+            "loadPct":     self.packetHandler.scs_tohost(word(4), 10) / 10.0,   # 0.1%-of-max-torque units, bit10 = direction
+            "voltage":     data[6] / 10.0,                                      # 0.1V units
+            "temperature": data[7],
+            "moving":      data[10],
+            "currentMa":   self.packetHandler.scs_tohost(word(13), 15) * 6.5,   # 6.5mA units
+        }
+
     def isMoving(self):
         moving, scsCommResult, scsError = self.packetHandler.ReadMoving(self.id)
         if scsCommResult != COMM_SUCCESS:
@@ -134,6 +167,18 @@ class Motor:
         self.setSetting(SMS_STS_MAX_ANGLE_LIMIT_L, self.maxPositionLimit, 2, "Max Angle Limit", signed=True)
         self.lockEeprom()
 
+    #-----------------------------------------------------APPLY ANGLE RESOLUTION-----------------------------------------------------------
+    # Writes a non-default Angle Resolution (EEPROM address 30) and fixes up Phase (address 18,
+    # bit 4) so Present Position feedback reflects the larger angle instead of wrapping every
+    # revolution - same pattern as applyPositionLimits(), demonstrated procedurally in main.py.
+
+    def applyAngleResolution(self):
+        self.unlockEeprom()
+        self.setSetting(SMS_STS_ANGLE_RESOLUTION, self.angleResolution, 1, "Angle Resolution")
+        phase = self.getSetting(SMS_STS_PHASE, 1, "Phase (before)")
+        self.setSetting(SMS_STS_PHASE, phase | 0x10, 1, "Phase (multi-turn bit4 set)")
+        self.lockEeprom()
+
     #-----------------------------------------------------PRINT METHOD-----------------------------------------------------------
 
     def printAllSettings(self):
@@ -149,4 +194,5 @@ class Motor:
         print(f"  Min Position Limit: {self.minPositionLimit}")
         print(f"  Max Position Limit: {self.maxPositionLimit}")
         print(f"  Position Margin: {self.positionMargin}")
+        print(f"  Present Position: {self.getPositionSpeed()[0]}")
         print("")

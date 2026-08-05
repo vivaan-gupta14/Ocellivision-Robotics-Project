@@ -71,11 +71,11 @@ class Bus:
     # Convenience wrapper so callers don't have to pass this bus's packetHandler into every Motor by hand.
 
     def addMotor(self, id, rawCenterPosition, range, minPosition, maxPosition,
-                 speed, acceleration, positionTolerance, angleResolution,
-                 minPositionLimit, maxPositionLimit, positionMargin):
+                 speed, acceleration, positionTolerance,
+                 minPositionLimit, maxPositionLimit, positionMargin, angleResolution=1):
         return Motor(self.packetHandler, id, rawCenterPosition, range, minPosition, maxPosition,
-                     speed, acceleration, positionTolerance, angleResolution,
-                     minPositionLimit, maxPositionLimit, positionMargin)
+                     speed, acceleration, positionTolerance,
+                     minPositionLimit, maxPositionLimit, positionMargin, angleResolution=angleResolution)
 
     #-----------------------------------------------------SYNCHRONIZED MULTI-MOTOR MOVE-----------------------------------------------------------
     # Queues every motor's goal position/speed/acc, sends them all in one bus transaction so they
