@@ -44,8 +44,6 @@ for id, cfg in MOTOR_CONFIGS.items():
         range=cfg["range"],
         minPosition=minPosition,
         maxPosition=maxPosition,
-        speed=cfg["moving_speed"],
-        acceleration=cfg["moving_acc"],
         positionTolerance=cfg["tolerance"],
         angleResolution=None,
         minPositionLimit=minPosition,
@@ -65,7 +63,10 @@ with bus:
 
     # Move all motors to their desired physical orientation first, simultaneously
     print("Moving all motors to their target physical center angle...")
-    bus.moveMotorsToPositions(motors, {id: motor.rawCenterPosition for id, motor in motors.items()})
+    bus.moveMotorsToPositions(motors, {
+        id: (motor.rawCenterPosition, MOTOR_CONFIGS[id]["moving_speed"], MOTOR_CONFIGS[id]["moving_acc"])
+        for id, motor in motors.items()
+    })
     time.sleep(2.0)  # Ensure they have completely stopped vibrating
 
     print("--- Starting Offset Calibration Process ---")
@@ -91,7 +92,10 @@ with bus:
 
     # Step 5: Move all motors to the newly calibrated center and confirm they read 2048
     print("Moving all motors to calibrated center...")
-    bus.moveMotorsToPositions(motors, {id: SCS_CALIBRATED_CENTER for id in motors})
+    bus.moveMotorsToPositions(motors, {
+        id: (SCS_CALIBRATED_CENTER, MOTOR_CONFIGS[id]["moving_speed"], MOTOR_CONFIGS[id]["moving_acc"])
+        for id in motors
+    })
 
     for id, motor in motors.items():
         print(f"[ID:{id:03d}] Present position after calibration: {motor.getPosition()}")
@@ -104,19 +108,31 @@ with bus:
     print("--- Verifying Range of Motion ---")
 
     print("Moving all motors to their minimum position...")
-    bus.moveMotorsToPositions(motors, {id: motor.minPosition for id, motor in motors.items()})
+    bus.moveMotorsToPositions(motors, {
+        id: (motor.minPosition, MOTOR_CONFIGS[id]["moving_speed"], MOTOR_CONFIGS[id]["moving_acc"])
+        for id, motor in motors.items()
+    })
     time.sleep(2.0)
 
     print("Moving all motors to calibrated center...")
-    bus.moveMotorsToPositions(motors, {id: SCS_CALIBRATED_CENTER for id in motors})
+    bus.moveMotorsToPositions(motors, {
+        id: (SCS_CALIBRATED_CENTER, MOTOR_CONFIGS[id]["moving_speed"], MOTOR_CONFIGS[id]["moving_acc"])
+        for id in motors
+    })
     time.sleep(2.0)
 
     print("Moving all motors to their maximum position...")
-    bus.moveMotorsToPositions(motors, {id: motor.maxPosition for id, motor in motors.items()})
+    bus.moveMotorsToPositions(motors, {
+        id: (motor.maxPosition, MOTOR_CONFIGS[id]["moving_speed"], MOTOR_CONFIGS[id]["moving_acc"])
+        for id, motor in motors.items()
+    })
     time.sleep(2.0)
 
     print("Moving all motors to calibrated center...")
-    bus.moveMotorsToPositions(motors, {id: SCS_CALIBRATED_CENTER for id in motors})
+    bus.moveMotorsToPositions(motors, {
+        id: (SCS_CALIBRATED_CENTER, MOTOR_CONFIGS[id]["moving_speed"], MOTOR_CONFIGS[id]["moving_acc"])
+        for id in motors
+    })
     time.sleep(2.0)
 
     print("--- Range of Motion Check Complete --- \n")

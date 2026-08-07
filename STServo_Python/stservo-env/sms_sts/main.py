@@ -15,6 +15,9 @@ BAUDRATE                        = 1000000                           # SC Servo d
 DEVICENAME                      = '/dev/tty.usbmodem5AAF2197651'    # Check which port is being used on your controller
                                                                 # ex) Windows: "COM1"   Linux: "/dev/ttyUSB0" Mac: "/dev/tty.usbserial-*"
 
+MOVE_SPEED                      = 1200                              # SC Servo moving speed (steps/sec)
+MOVE_ACC                        = 10                                # SC Servo moving acceleration (steps/sec^2)
+
 print(f"SC Servo ID: {SCS_ID}")
 print(f"SC Servo BAUDRATE: {BAUDRATE}")
 print(f"SC Servo DEVICENAME: {DEVICENAME}")
@@ -50,8 +53,6 @@ with Bus(DEVICENAME, BAUDRATE) as bus:
         range=4096,
         minPosition=0,
         maxPosition=4096,
-        speed=1200,
-        acceleration=10,
         positionTolerance=1,
         angleResolution=4,
         minPositionLimit=0,
@@ -102,8 +103,8 @@ with Bus(DEVICENAME, BAUDRATE) as bus:
     #------------------------------------------------------------MAIN CONTROL LOOP------------------------------------------------
 
     # move to "start position"
-    moveToPosition(motor, 0, motor.speed, motor.acceleration, motor.positionTolerance)
+    moveToPosition(motor, 0, MOVE_SPEED, MOVE_ACC, motor.positionTolerance)
     time.sleep(2)
-    moveToPosition(motor, 4096, motor.speed, motor.acceleration, motor.positionTolerance)
+    moveToPosition(motor, 4096, MOVE_SPEED, MOVE_ACC, motor.positionTolerance)
     time.sleep(2)
-    moveToPosition(motor, 0, motor.speed, motor.acceleration, motor.positionTolerance)
+    moveToPosition(motor, 0, MOVE_SPEED, MOVE_ACC, motor.positionTolerance)

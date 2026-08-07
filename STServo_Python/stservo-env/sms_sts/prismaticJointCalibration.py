@@ -13,8 +13,11 @@ SCS_ID                           = 6                                 # CHANGE TH
 BAUDRATE                         = 1000000                           # SC Servo default baudrate : 1000000 (1 Mbps)
 DEVICENAME                       = '/dev/tty.usbmodem5AAF2197651'    # Check which port is being used on your controller
 
-SCS_MOVING_SPEED                 = 300                               # Matches the run that produced the current-draw baseline below (prismaticCurrentDraw.py)
-SCS_MOVING_ACC                   = 30
+homingSpeed                      = 300                               # Matches the run that produced the current-draw baseline below (prismaticCurrentDraw.py). Used for obstacle search + initial drive-to-center.
+homingAcc                        = 30
+movingSpeed                      = 1000                               # Used only for the post-homing range-test moves (front-most/back-most/center)
+movingAcc                        = 100
+RANGE_BUFFER                     = 500                               # Steps to back off from each detected obstacle before the range-test move, so movingSpeed/movingAcc doesn't ram the stop
 SCS_MOVE_TOLERANCE               = 3                                 # Steps within which we consider a move "arrived"
 
 # This joint is driven by a lead screw, so it needs several full servo revolutions to cover
@@ -31,7 +34,7 @@ SAMPLE_PERIOD                    = 1.0 / SAMPLE_HZ
 # speed/acc (SCS_ID 6, angle resolution 1): baseline mean 11.4mA, stdev 3.9mA, peak 19.5mA
 # across forward+backward legs -> mean + 4*stdev ~= 27mA. Comfortably above the observed
 # free-travel peak, well below what a real stall against the mechanical stop produces.
-SPIKE_CURRENT_THRESHOLD_MA        = 27
+SPIKE_CURRENT_THRESHOLD_MA        = 30
 
 # After a spike stops the goal-position command, the joint keeps coasting/decelerating for a
 # moment before it's actually at rest - starting the next leg's motion during that window
@@ -46,14 +49,17 @@ SETTLE_DWELL_S                     = 0.3
 # MIN_ANGLE_LIMIT_L=9, OFS_L=31, MODE=33, TORQUE_ENABLE=40, PRESENT_CURRENT_L=69, ...
 # all already defined by this SDK).
 STS_TORQUE_LIMIT_L               = 48
-HOMING_TORQUE_LIMIT               = 125                               # 12.5% of max torque - keeps stop impacts gentle during search
-FULL_TORQUE_LIMIT                 = 1000                              # 100.0% - restored once homing/centering is complete
+HOMING_TORQUE_LIMIT              = 125                               # 12.5% of max torque - keeps stop impacts gentle during search.
+movingTorqueLimit                = 300
 
 print(f"SC Servo ID: {SCS_ID}")
 print(f"SC Servo BAUDRATE: {BAUDRATE}")
 print(f"SC Servo DEVICENAME: {DEVICENAME}")
-print(f"SC Servo Moving Speed: {SCS_MOVING_SPEED}")
-print(f"SC Servo Moving Acc: {SCS_MOVING_ACC}")
+print(f"SC Servo Homing Speed: {homingSpeed}")
+print(f"SC Servo Homing Acc: {homingAcc}")
+print(f"SC Servo Moving Speed: {movingSpeed}")
+print(f"SC Servo Moving Acc: {movingAcc}")
+print(f"Range Test Buffer: {RANGE_BUFFER}")
 print(f"Search Distance: {SEARCH_DISTANCE}")
 print(f"Spike Current Threshold (mA): {SPIKE_CURRENT_THRESHOLD_MA}")
 print(f"Homing Torque Limit: {HOMING_TORQUE_LIMIT / 10.0:.1f}%")
@@ -77,8 +83,6 @@ with bus:
         range=SEARCH_DISTANCE,
         minPosition=-SEARCH_DISTANCE,
         maxPosition=SEARCH_DISTANCE,
-        speed=SCS_MOVING_SPEED,
-        acceleration=SCS_MOVING_ACC,
         positionTolerance=SCS_MOVE_TOLERANCE,
         minPositionLimit=0,
         maxPositionLimit=0,        # 0/0 = unrestricted multi-turn rotation (no clipping at +/-4095)
@@ -157,13 +161,13 @@ with bus:
 
             return telemetry["position"] if telemetry is not None else None
 
-        def searchForObstacle(directionLabel, searchGoalPosition):
+        def searchForObstacle(directionLabel, searchGoalPosition, speed, acceleration):
             """Blocking move toward searchGoalPosition, sampling current every poll. The instant
             present current reaches SPIKE_CURRENT_THRESHOLD_MA, stops the goal-position command
             (by re-commanding the present position), waits for the joint to actually come to
             rest (waitForStop()), and returns the settled unwrapped position.
             Raises HomingError if searchGoalPosition is reached without ever seeing a spike."""
-            motor.setPosition(searchGoalPosition)
+            motor.setPosition(searchGoalPosition, speed, acceleration)
 
             hasMoved = False
             while True:
@@ -176,7 +180,7 @@ with bus:
                           f"PresSpd:{telemetry['speed']:5d} Current:{telemetry['currentMa']:7.1f}mA")
 
                     if abs(telemetry["currentMa"]) >= SPIKE_CURRENT_THRESHOLD_MA:
-                        motor.setPosition(telemetry["position"])   # stop the goal-position command immediately
+                        motor.setPosition(telemetry["position"], speed, acceleration)   # stop the goal-position command immediately
                         print(f"  *** Obstacle detected {directionLabel} near position {telemetry['position']} "
                               f"(current {telemetry['currentMa']:.1f}mA >= {SPIKE_CURRENT_THRESHOLD_MA}mA) - settling ***")
                         obstaclePosition = waitForStop()
@@ -197,11 +201,11 @@ with bus:
                 if dt < SAMPLE_PERIOD:
                     time.sleep(SAMPLE_PERIOD - dt)
 
-        def driveToPosition(goalPosition, phaseLabel):
+        def driveToPosition(goalPosition, phaseLabel, speed, acceleration):
             """Blocking move to goalPosition (normal arrival detection), sampling current every
             poll for the live plot. Aborts with HomingError if current unexpectedly spikes
-            mid-move - that would mean the computed center isn't actually clear."""
-            motor.setPosition(goalPosition)
+            mid-move - that would mean the target position isn't actually clear."""
+            motor.setPosition(goalPosition, speed, acceleration)
 
             hasMoved = False
             while True:
@@ -214,7 +218,7 @@ with bus:
                           f"PresSpd:{telemetry['speed']:5d} Current:{telemetry['currentMa']:7.1f}mA")
 
                     if abs(telemetry["currentMa"]) >= SPIKE_CURRENT_THRESHOLD_MA:
-                        motor.setPosition(telemetry["position"])
+                        motor.setPosition(telemetry["position"], speed, acceleration)
                         raise HomingError(
                             f"Unexpected obstacle during '{phaseLabel}' at position {telemetry['position']} "
                             f"(current {telemetry['currentMa']:.1f}mA >= {SPIKE_CURRENT_THRESHOLD_MA}mA)."
@@ -233,12 +237,12 @@ with bus:
 
         print("\n=== Step 6: Search forward for obstacle #1 ===")
         telemetryPlot.markEvent("Obstacle Search #1")
-        forwardPosition = searchForObstacle("forward", startPosition + SEARCH_DISTANCE)
+        forwardPosition = searchForObstacle("forward", startPosition + SEARCH_DISTANCE, homingSpeed, homingAcc)
         telemetryPlot.markEvent(f"Obstacle #1 @ {forwardPosition}")
 
         print("\n=== Step 7: Search backward for obstacle #2 ===")
         telemetryPlot.markEvent("Obstacle Search #2")
-        backPosition = searchForObstacle("backward", forwardPosition - SEARCH_DISTANCE)
+        backPosition = searchForObstacle("backward", forwardPosition - SEARCH_DISTANCE, homingSpeed, homingAcc)
         telemetryPlot.markEvent(f"Obstacle #2 @ {backPosition}")
 
         centerPosition = round((backPosition + forwardPosition) / 2)
@@ -248,15 +252,35 @@ with bus:
 
         print("\n=== Step 8: Drive to computed center ===")
         telemetryPlot.markEvent("Moving to Center")
-        driveToPosition(centerPosition, "moving_to_center")
+        driveToPosition(centerPosition, "moving_to_center", homingSpeed, homingAcc)
 
-        print("\n=== Step 9: Restore full runtime torque limit ===")
-        motor.setSetting(STS_TORQUE_LIMIT_L, FULL_TORQUE_LIMIT, 2, "Runtime Torque Limit")
+        time.sleep(2)
+        motor.setSetting(STS_TORQUE_LIMIT_L, movingTorqueLimit, 2, "Runtime Torque Limit")
 
-        print("\n=== Homing Complete ===")
+        print("\n=== Step 9: Range test - drive to front-most (buffered) ===")
+        telemetryPlot.markEvent("Range Test: Front-most")
+        frontMostTarget = forwardPosition - RANGE_BUFFER
+        motor.moveToPosition(frontMostTarget, movingSpeed, movingAcc)
+        time.sleep(2.0)
+
+        print("\n=== Step 10: Range test - drive to back-most (buffered) ===")
+        telemetryPlot.markEvent("Range Test: Back-most")
+        backMostTarget = backPosition + RANGE_BUFFER
+        motor.moveToPosition(backMostTarget, movingSpeed, movingAcc)
+        time.sleep(2.0)
+
+        print("\n=== Step 11: Range test - return to center ===")
+        telemetryPlot.markEvent("Range Test: Center")
+        motor.moveToPosition(centerPosition, movingSpeed, movingAcc)
+        time.sleep(2.0)
+
+        print("\n=== Homing + Range Test Complete ===")
         print(f"Back obstacle (unwrapped):    {backPosition}")
         print(f"Forward obstacle (unwrapped): {forwardPosition}")
         print(f"Center (unwrapped):           {centerPosition}")
+        print(f"Front-most target (buffered): {frontMostTarget}")
+        print(f"Back-most target (buffered):  {backMostTarget}")
+        print(f"Runtime torque limit left capped at {HOMING_TORQUE_LIMIT / 10.0:.1f}% (never restored to 100%)")
 
     except HomingError as e:
         print(f"\n!!! HOMING FAILED: {e} !!!")

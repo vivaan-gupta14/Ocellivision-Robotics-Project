@@ -41,8 +41,6 @@ with bus:
         range=STEP_DISTANCE,
         minPosition=-STEP_DISTANCE,
         maxPosition=STEP_DISTANCE,
-        speed=SCS_MOVING_SPEED,
-        acceleration=SCS_MOVING_ACC,
         positionTolerance=SCS_MOVE_TOLERANCE,
         minPositionLimit=0,
         maxPositionLimit=0,        # 0/0 = unrestricted multi-turn rotation (no clipping at +/-4095)
@@ -69,7 +67,7 @@ with bus:
     t0 = time.time()
 
     def moveWithCurrentSampling(goalPosition, phaseLabel):
-        motor.setPosition(goalPosition)
+        motor.setPosition(goalPosition, SCS_MOVING_SPEED, SCS_MOVING_ACC)
 
         hasMoved = False
         while True:

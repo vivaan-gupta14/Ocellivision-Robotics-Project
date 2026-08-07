@@ -71,33 +71,32 @@ class Bus:
     # Convenience wrapper so callers don't have to pass this bus's packetHandler into every Motor by hand.
 
     def addMotor(self, id, rawCenterPosition, range, minPosition, maxPosition,
-                 speed, acceleration, positionTolerance,
+                 positionTolerance,
                  minPositionLimit, maxPositionLimit, positionMargin, angleResolution=1):
         return Motor(self.packetHandler, id, rawCenterPosition, range, minPosition, maxPosition,
-                     speed, acceleration, positionTolerance,
+                     positionTolerance,
                      minPositionLimit, maxPositionLimit, positionMargin, angleResolution=angleResolution)
 
     #-----------------------------------------------------SYNCHRONIZED MULTI-MOTOR MOVE-----------------------------------------------------------
     # Queues every motor's goal position/speed/acc, sends them all in one bus transaction so they
     # start moving together, then round-robin polls each motor until it has arrived.
 
-    def moveMotorsToPositions(self, motors, goalPositions):
+    def moveMotorsToPositions(self, motors, moves):
         # motors: dict {id: Motor}
-        # goalPositions: dict {id: goalPosition}
-        for id, goalPosition in goalPositions.items():
-            motor = motors[id]
-            self.packetHandler.SyncWritePosEx(id, goalPosition, motor.speed, motor.acceleration)
+        # moves: dict {id: (goalPosition, speed, acceleration)}
+        for id, (goalPosition, speed, acceleration) in moves.items():
+            self.packetHandler.SyncWritePosEx(id, goalPosition, speed, acceleration)
 
         scsCommResult = self.packetHandler.groupSyncWrite.txPacket()
         if scsCommResult != COMM_SUCCESS:
             print(f"[SyncWrite] {self.packetHandler.getTxRxResult(scsCommResult)}")
         self.packetHandler.groupSyncWrite.clearParam()
 
-        hasMoved = {id: False for id in goalPositions}
-        arrived = {id: False for id in goalPositions}
+        hasMoved = {id: False for id in moves}
+        arrived = {id: False for id in moves}
 
         while not all(arrived.values()):
-            for id, goalPosition in goalPositions.items():
+            for id, (goalPosition, speed, acceleration) in moves.items():
                 if arrived[id]:
                     continue
 

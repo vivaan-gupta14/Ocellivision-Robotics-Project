@@ -8,7 +8,7 @@ from bus import Bus
 
 #-------------------------------------------------------INITIALIZE SERVO SETTINGS-------------------------------------------------
 
-SCS_ID                          = 6                                 # SC Servo ID to read settings from
+SCS_ID                          = 9                                 # SC Servo ID to read settings from
 BAUDRATE                        = 1000000                           # SC Servo default baudrate : 1000000 (1 Mbps)
 DEVICENAME                      = '/dev/tty.usbmodem5AAF2197651'    # Check which port is being used on your controller
                                                                 # ex) Windows: "COM1"   Linux: "/dev/ttyUSB0" Mac: "/dev/tty.usbserial-*"
@@ -78,7 +78,7 @@ SRAM_TABLE = [
 
 with Bus(DEVICENAME, BAUDRATE) as bus:
 
-    # Only used for reading here, so the move-related fields (speed, acceleration, limits, ...)
+    # Only used for reading here, so the move-related fields (limits, tolerance, ...)
     # are irrelevant placeholders - Motor.getSetting doesn't touch them.
     motor = bus.addMotor(
         id=SCS_ID,
@@ -86,8 +86,6 @@ with Bus(DEVICENAME, BAUDRATE) as bus:
         range=0,
         minPosition=0,
         maxPosition=0,
-        speed=0,
-        acceleration=0,
         positionTolerance=0,
         angleResolution=0,
         minPositionLimit=0,

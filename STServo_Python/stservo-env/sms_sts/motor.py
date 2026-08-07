@@ -18,7 +18,7 @@ TELEMETRY_READ_LENGTH     = 15
 class Motor:
 
     def __init__(self, packetHandler, id, rawCenterPosition, range, minPosition, maxPosition,
-                 speed, acceleration, positionTolerance,
+                 positionTolerance,
                  minPositionLimit, maxPositionLimit, positionMargin, angleResolution=1):
 
         self.packetHandler      = packetHandler        # Shared sms_sts packet handler for the bus this motor is on
@@ -28,8 +28,6 @@ class Motor:
         self.range              = range                 # Max offset from center this motor is allowed to travel
         self.minPosition        = minPosition           # Soft minimum goal position (center - range)
         self.maxPosition        = maxPosition           # Soft maximum goal position (center + range)
-        self.speed              = speed                 # Default moving speed (steps/sec)
-        self.acceleration       = acceleration           # Default moving acceleration (steps/sec^2)
         self.positionTolerance  = positionTolerance     # Dead-zone: positions within this range count as "arrived"
         self.angleResolution    = angleResolution        # Configured Angle Resolution setting (EEPROM address 30)
         self.minPositionLimit   = minPositionLimit      # Hardware Min_Angle_Limit written to EEPROM
@@ -100,13 +98,8 @@ class Motor:
             print(f"[ID:{self.id:03d}][PositionSpeed] {self.packetHandler.getRxPacketError(scsError)}")
         return scsPresentPosition, scsPresentSpeed
 
-    def setPosition(self, goalPosition, speed=None, acceleration=None):
-        scsCommResult, scsError = self.packetHandler.WritePosEx(
-            self.id,
-            goalPosition,
-            speed if speed is not None else self.speed,
-            acceleration if acceleration is not None else self.acceleration,
-        )
+    def setPosition(self, goalPosition, speed, acceleration):
+        scsCommResult, scsError = self.packetHandler.WritePosEx(self.id, goalPosition, speed, acceleration)
         if scsCommResult != COMM_SUCCESS:
             print(f"[ID:{self.id:03d}][SetPosition] {self.packetHandler.getTxRxResult(scsCommResult)}")
         elif scsError != 0:
@@ -140,7 +133,7 @@ class Motor:
             print(f"[ID:{self.id:03d}][Moving] {self.packetHandler.getRxPacketError(scsError)}")
         return moving == 1
 
-    def moveToPosition(self, goalPosition, speed=None, acceleration=None):
+    def moveToPosition(self, goalPosition, speed, acceleration):
         # Blocking single-motor move: writes the goal position, then polls present position/speed
         # and moving status until the motor has arrived (or was already within positionTolerance).
         self.setPosition(goalPosition, speed, acceleration)
@@ -187,8 +180,6 @@ class Motor:
         print(f"  Range: {self.range}")
         print(f"  Min Position: {self.minPosition}")
         print(f"  Max Position: {self.maxPosition}")
-        print(f"  Speed: {self.speed}")
-        print(f"  Acceleration: {self.acceleration}")
         print(f"  Position Tolerance: {self.positionTolerance}")
         print(f"  Angle Resolution: {self.angleResolution}")
         print(f"  Min Position Limit: {self.minPositionLimit}")

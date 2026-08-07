@@ -19,11 +19,11 @@ SCS_CALIBRATED_CENTER           = 2048                              # The positi
 # hardware backup limits (minPositionLimit/maxPositionLimit): the hardware limit is set
 # `margin` steps wider on each side, so it only kicks in if the software limit fails.
 MOTOR_CONFIGS = {
-    # 7:  {"range": 700, "moving_speed": 1200, "moving_acc": 10, "tolerance": 3, "margin": 100},
-    # 8:  {"range": 700, "moving_speed": 1200, "moving_acc": 10, "tolerance": 3, "margin": 100},
-    # 9:  {"range": 1400, "moving_speed": 1200, "moving_acc": 10, "tolerance": 3, "margin": 100},
-    # 10: {"range": 1400, "moving_speed": 1200, "moving_acc": 10, "tolerance": 3, "margin": 100},
-    6:  {"range": 200, "moving_speed": 300, "moving_acc": 20, "tolerance": 3, "margin": 100, "angleResolution": 5},
+    7:  {"range": 700, "moving_speed": 1200, "moving_acc": 10, "tolerance": 3, "margin": 100},
+    8:  {"range": 700, "moving_speed": 1200, "moving_acc": 10, "tolerance": 3, "margin": 100},
+    9:  {"range": 1400, "moving_speed": 1200, "moving_acc": 10, "tolerance": 3, "margin": 100},
+    10: {"range": 1400, "moving_speed": 1200, "moving_acc": 10, "tolerance": 3, "margin": 100},
+    # 6:  {"range": 200, "moving_speed": 300, "moving_acc": 20, "tolerance": 3, "margin": 100, "angleResolution": 5},
 }
 
 print(f"SC Servo BAUDRATE: {BAUDRATE}")
@@ -56,8 +56,6 @@ with bus:
             range=cfg["range"],
             minPosition=minPosition,
             maxPosition=maxPosition,
-            speed=cfg["moving_speed"],
-            acceleration=cfg["moving_acc"],
             positionTolerance=cfg["tolerance"],
             minPositionLimit=minPosition - margin,
             maxPositionLimit=maxPosition + margin,
@@ -82,21 +80,23 @@ with bus:
 
     for id, motor in motors.items():
         print(f"--- Motor ID {id} ---")
+        cfg = MOTOR_CONFIGS[id]
+        speed, acceleration = cfg["moving_speed"], cfg["moving_acc"]
 
         print(f"Moving motor {id} to its minimum position...")
-        motor.moveToPosition(motor.minPosition)
+        motor.moveToPosition(motor.minPosition, speed, acceleration)
         time.sleep(2.0)
 
         print(f"Moving motor {id} to calibrated center...")
-        motor.moveToPosition(SCS_CALIBRATED_CENTER)
+        motor.moveToPosition(SCS_CALIBRATED_CENTER, speed, acceleration)
         time.sleep(2.0)
 
         print(f"Moving motor {id} to its maximum position...")
-        motor.moveToPosition(motor.maxPosition)
+        motor.moveToPosition(motor.maxPosition, speed, acceleration)
         time.sleep(2.0)
 
         print(f"Moving motor {id} to calibrated center...")
-        motor.moveToPosition(SCS_CALIBRATED_CENTER)
+        motor.moveToPosition(SCS_CALIBRATED_CENTER, speed, acceleration)
         time.sleep(2.0)
 
     print("--- Range of Motion Check Complete --- \n")

@@ -101,7 +101,7 @@ def move_to_position(packetHandler, scs_id, goal_position, moving_speed, moving_
 #-------------------------------------------------------INITIALIZE SERVO SETTINGS-------------------------------------------------
 
 # Default setting
-SCS_ID                          = 1                                 # SC Servo ID : 10
+SCS_ID                          = 6                                 # SC Servo ID : 10
 BAUDRATE                        = 1000000                           # SC Servo default baudrate : 1000000 (1 Mbps)
 DEVICENAME                      = '/dev/tty.usbmodem5AAF2197651'    # Check which port is being used on your controller
                                                                 # ex) Windows: "COM1"   Linux: "/dev/ttyUSB0" Mac: "/dev/tty.usbserial-*"
@@ -147,6 +147,7 @@ else:
     quit()
 
 print("")
+time.sleep(10)
 
 
 #---------------------------------------------------------SERVO SETTINGS------------------------------------------------------
@@ -159,12 +160,12 @@ packetHandler.unLockEprom(SCS_ID)
 
 setSetting(address=40, value = 1, num_bytes= 1, name = "Torque Switch")
 setSetting(address=33, value = 0, num_bytes= 1, name = "Operation Mode")
-setSetting(address=30, value = 4, num_bytes = 1, name = "Angle Resolution")
-# Both limits must be exactly 0 (not 0/4095) to enable multi-turn mode - 0/4095 is
-# still just the bounded single-turn range and clamps Goal Position regardless of
-# Angle Resolution.
-setSetting(address=9, value = 0, num_bytes=2, name = "Min Angle Limit")
-setSetting(address=11, value = 0, num_bytes=2, name = "Max Angle Limit")
+setSetting(address=30, value = 5, num_bytes = 1, name = "Angle Resolution")
+# 348/3748 is a bounded (non-multi-turn) range, but at Angle Resolution=5 that's
+# (3748-348)*5 = 17000 raw steps - about 4 revolutions - which covers the lead
+# screw's several-revolution physical travel without needing 0/0 multi-turn mode.
+setSetting(address=9, value = 348, num_bytes=2, name = "Min Angle Limit")
+setSetting(address=11, value = 3748, num_bytes=2, name = "Max Angle Limit")
 
 # Multi-turn also needs Phase (0x12/18) BIT4 set so Present Position feedback reflects
 # the larger angle instead of wrapping every revolution. Read-modify-write so we don't
@@ -181,24 +182,49 @@ packetHandler.LockEprom(SCS_ID)
 
 getSetting(address=30, num_bytes=1, name = "Angle Resolution")
 getSetting(address=33, num_bytes=1, name = "Operation Mode")
-setSetting(address=40, value = 1, num_bytes= 1, name = "Torque Switch")
+getSetting(address=40, num_bytes= 1, name = "Torque Switch")
 getSetting(address=9, num_bytes=2, name = "Min Angle Limit")
 getSetting(address=11, num_bytes=2, name = "Max Angle Limit")
 getSetting(address=18, num_bytes=1, name = "Phase")
 
 #------------------------------------------------
+# Deliberately NOT re-running Torque Switch=128 ("correct current position to 2048")
+# here: that command only pins the RAW position, ignoring Angle Resolution, so at
+# resolution 5 it would leave Present Position at ~409, not 2048 - it was actually the
+# source of that exact bug when this script used to call it. Calibration (including the
+# Angle-Resolution-aware Position Correction offset) is expected to already have been
+# done by servoRangeAndCenterTest.py; the safety check below verifies that rather than
+# blindly re-anchoring.
 
-time.sleep(5)
-
-#------------------------------------------------------------MAIN CONTROL LOOP------------------------------------------------
 
 try:
-    #move to "start position"
-    move_to_position(packetHandler, SCS_ID, 0, 1200, 10, 1)
+    # Safety check: only proceed with the move sequence if the servo is
+    # currently sitting at the known-safe start position (2048). Anything
+    # else means we don't trust where the arm actually is, so abort instead
+    # of commanding a move from an unknown position.
+    scs_present_position, scs_present_speed, scs_comm_result, scs_error = packetHandler.ReadPosSpeed(SCS_ID)
+    print(f"Present Position: {scs_present_position}")
+    time.sleep(1)
+    if scs_comm_result != COMM_SUCCESS:
+        raise RuntimeError(f"Safety check failed: could not read present position ({packetHandler.getTxRxResult(scs_comm_result)})")
+    if scs_error != 0:
+        raise RuntimeError(f"Safety check failed: servo error reading present position ({packetHandler.getRxPacketError(scs_error)})")
+    if scs_present_position != 2048:
+        raise RuntimeError(f"Safety check failed: present position {scs_present_position} != 2048, refusing to move")
+    print(f"[Safety Check] Present position confirmed at {scs_present_position}")
+
+    time.sleep(5)
+
+    #------------------------------------------------------------MAIN CONTROL LOOP------------------------------------------------
+
+    print("moving to center position (2048)")
+    move_to_position(packetHandler, SCS_ID, 2048, 200, 10, 1)
     time.sleep(2)
-    move_to_position(packetHandler, SCS_ID, 4096, 1200, 10, 1)
+    print("moving to max position (3648)")
+    move_to_position(packetHandler, SCS_ID, 3648, 200, 10, 1)
     time.sleep(2)
-    move_to_position(packetHandler, SCS_ID, 0, 1200, 10, 1)
+    print("moving to center position (2048)")
+    move_to_position(packetHandler, SCS_ID, 2048, 200, 10, 1)
 #-----------------------------------------------------ENDING THE SCRIPT-------------------------------------------------------
 
 finally:
