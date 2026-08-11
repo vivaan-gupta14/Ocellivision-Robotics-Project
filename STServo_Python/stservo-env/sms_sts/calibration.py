@@ -1,9 +1,13 @@
 
 #-----------------------------------------------------GENERAL IMPORTS----------------------------------------------------------
 
+print("Importing time")
 import time
+print("Importing bus class")
 from bus import Bus
+print("Importing Telemetry class")
 from telemetry import Telemetry
+print("Importing SC Servo SDK")
 from scservo_sdk import *                      # Uses SC Servo SDK library
 print("General Imports Complete\n")
 
@@ -20,7 +24,7 @@ homingSpeed                      = 300                               # Matches t
 homingAcc                        = 30
 movingSpeed                      = 1000                               # Used only for motor 6's range-test moves (front-most/back-most/center)
 movingAcc                        = 100
-RANGE_BUFFER                     = 500                               # Steps to back off from each detected obstacle before the range-test move, so movingSpeed/movingAcc doesn't ram the stop
+RANGE_BUFFER                     = 1000                               # Steps to back off from each detected obstacle before the range-test move, so movingSpeed/movingAcc doesn't ram the stop
 SCS_MOVE_TOLERANCE               = 3                                 # Steps within which we consider a move "arrived"
 
 # This joint is driven by a lead screw, so it needs several full servo revolutions to cover

@@ -1,7 +1,9 @@
 
 #-----------------------------------------------------GENERAL IMPORTS----------------------------------------------------------
 
+print("Importing time")
 import time
+print("Importing matplotlib class")
 import matplotlib.pyplot as plt
 print("Telemetry Imports Complete\n")
 
