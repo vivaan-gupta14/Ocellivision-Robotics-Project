@@ -1,0 +1,7 @@
+[project]
+name = "so101-lerobot"
+version = "0.1.0"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "lerobot[feetech,core_scripts]",
+]
