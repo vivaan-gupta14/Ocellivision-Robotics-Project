@@ -20,14 +20,16 @@ launch. The lower-level bus.connect()/read()/write()/sync_read()/sync_write() ar
 directly instead.
 
 Key bindings (first key = positive direction, second = negative):
-    Left/Right arrow -> motor 6 (prismatic slide).      Left = positive, Right = negative.
-    Q / E             -> motor 7 (rotary disc).
-    I / P             -> motor 8 (rotary disc).
-    Z / C             -> motor 9 (rotary disc).
-    B / M             -> motor 10 (rotary disc).
+    Up/Down arrow -> motor 6 (prismatic slide).      Up = positive, Down = negative.
+    E / Q          -> motor 7 (rotary disc).
+    P / I          -> motor 8 (rotary disc).
+    C / Z          -> motor 9 (rotary disc).
+    M / B          -> motor 10 (rotary disc).
 ESC or Ctrl+C exits. Motor 6 is re-homed (sensorless, drives into both mechanical stops)
 every time this script starts. After homing completes, ALL 10 motors -- base arm and
 wrist alike -- stay locked out from any control for 5 seconds before teleop goes live.
+On exit, motors 7-10 are driven back to their calibrated center (2048) before torque is
+disabled, so the wrist doesn't get left in an arbitrary position between sessions.
 
 Usage:
     07_teleoperate_full_10dof.py \
@@ -105,13 +107,14 @@ RELEASE_TIMEOUT = 0.15
 POLL_INTERVAL = 0.02               # also serves as the combined loop's tick pacer
 ESCAPE_SEQUENCE_TIMEOUT = 0.1
 
-# Left=positive / Right=negative, Q/E, I/P, Z/C, B/M
+# Up=positive / Down=negative for motor 6; E/Q, P/I, C/Z, M/B for 7-10 (all swapped from
+# an earlier draft per user feedback).
 KEY_BINDINGS = {
-    "LEFT": (6, +1), "RIGHT": (6, -1),
-    "q": (7, +1),  "e": (7, -1),
-    "i": (8, +1),  "p": (8, -1),
-    "z": (9, +1),  "c": (9, -1),
-    "b": (10, +1), "m": (10, -1),
+    "UP": (6, +1), "DOWN": (6, -1),
+    "e": (7, +1),  "q": (7, -1),
+    "p": (8, +1),  "i": (8, -1),
+    "c": (9, +1),  "z": (9, -1),
+    "m": (10, +1), "b": (10, -1),
 }
 
 # Raw encoder counts added to (or subtracted from) a wrist motor's goal position on every
@@ -135,10 +138,13 @@ class HomingError(Exception):
 # --------------------------------------------------------------------------------------
 
 
+ARROW_ESCAPE_CODES = {"A": "UP", "B": "DOWN", "C": "RIGHT", "D": "LEFT"}
+
+
 def read_key(timeout):
     """Non-blocking read of a single key event from stdin.
-    Returns 'LEFT', 'RIGHT', 'ESC', a plain character (e.g. 'q', 'B'), or None if nothing
-    usable arrived within timeout.
+    Returns 'UP', 'DOWN', 'LEFT', 'RIGHT', 'ESC', a plain character (e.g. 'q', 'B'), or
+    None if nothing usable arrived within timeout.
 
     Reads directly from the raw file descriptor (os.read) rather than the buffered
     sys.stdin: a buffered read can silently slurp a whole arrow-key escape sequence into
@@ -161,11 +167,7 @@ def read_key(timeout):
     if not ready:
         return None
     ch3 = os.read(fd, 1).decode()
-    if ch3 == "C":
-        return "RIGHT"
-    elif ch3 == "D":
-        return "LEFT"
-    return None
+    return ARROW_ESCAPE_CODES.get(ch3)
 
 
 # --------------------------------------------------------------------------------------
@@ -366,6 +368,22 @@ def home_motor_6(bus):
     return wrist_min, wrist_max, wrist_goal
 
 
+def reset_wrist_rotaries_to_center(bus, timeout_s=5.0):
+    """Blocking move of motors 7-10 back to their calibrated center (2048), so the wrist
+    doesn't get left in whatever position the user happened to jog it to."""
+    names = [WRIST_MOTOR_NAMES[wid] for wid in MOTOR_CONFIGS]
+    bus.sync_write("Goal_Position", {name: SCS_CALIBRATED_CENTER for name in names}, normalize=False)
+
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        positions = bus.sync_read("Present_Position", names, normalize=False)
+        if all(abs(positions[name] - SCS_CALIBRATED_CENTER) <= SCS_MOVE_TOLERANCE for name in names):
+            return
+        time.sleep(SAMPLE_PERIOD)
+
+    print(f"  [WARN] motors 7-10 did not all reach center within {timeout_s:.0f}s -- proceeding anyway")
+
+
 # --------------------------------------------------------------------------------------
 # Main
 # --------------------------------------------------------------------------------------
@@ -470,8 +488,8 @@ def main():
 
         # 11. Combined keyboard + leader-follower teleop loop.
         print(
-            "Teleoperating. Hold Left/Right for motor 6, Q/E for 7, I/P for 8, Z/C for 9, "
-            "B/M for 10. Move the leader arm for motors 1-5. ESC or Ctrl+C to quit."
+            "Teleoperating. Hold Up/Down for motor 6, E/Q for 7, P/I for 8, C/Z for 9, "
+            "M/B for 10. Move the leader arm for motors 1-5. ESC or Ctrl+C to quit."
         )
         tty.setraw(fd)
         try:
@@ -487,7 +505,7 @@ def main():
                     # real KeyboardInterrupt -- must be checked explicitly.
                     break
 
-                k = key if key in ("LEFT", "RIGHT") else (key.lower() if key else None)
+                k = key if key in ("UP", "DOWN") else (key.lower() if key else None)
                 if k in KEY_BINDINGS:
                     wid, sign = KEY_BINDINGS[k]
                     last_key_time[wid] = now
@@ -510,6 +528,9 @@ def main():
                 bus.sync_write("Goal_Position", arm_action)  # normalize=True (default)
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+        print("Resetting motors 7-10 to center (2048)...")
+        reset_wrist_rotaries_to_center(bus)
 
     except KeyboardInterrupt:
         print("\n!!! Interrupted by user (Ctrl+C) !!!")
