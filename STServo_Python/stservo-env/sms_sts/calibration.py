@@ -68,6 +68,24 @@ HOMING_TORQUE_LIMIT = (
 )
 movingTorqueLimit = 400  # 40% of max torque - raised on motor 6 only, after homing, for its own range test.
 
+# EEPROM Addresses not already defined in scservo_sdk/sms_sts.py's control table (same as template.py)
+SMS_STS_MAX_TEMPERATURE_LIMIT = 13
+SMS_STS_MAX_VOLTAGE_LIMIT     = 14
+SMS_STS_MIN_VOLTAGE_LIMIT     = 15
+SMS_STS_UNLOADING_CONDITION   = 19
+SMS_STS_LED_ALARM_CONDITION   = 20
+
+# Protection/alarm/dead-zone settings, applied identically to every motor (6-10) before any
+# motor moves - unlike the torque limit, these don't have separate homing/range-test values,
+# so there's no reason to stage them in two phases the way movingTorqueLimit/HOMING_TORQUE_LIMIT are.
+MAX_TEMPERATURE_LIMIT = 55   # Degrees Celsius
+MAX_VOLTAGE_LIMIT      = 130  # 13.0V, in 0.1V units
+MIN_VOLTAGE_LIMIT      = 90   # 9.0V, in 0.1V units
+UNLOADING_CONDITIONS   = 63   # 0b111111: bit0 Voltage, bit1 Sensor, bit2 Temperature, bit3 Current, bit4 Angle, bit5 Overload - all 6 enabled
+LED_ALARM_CONDITIONS   = 63   # Same bit layout as above; LED flashes for all 6 conditions
+CW_INSENSITIVE_ZONE    = 1
+CCW_INSENSITIVE_ZONE   = 1
+
 # --- Motors 7-10 (rotary joints, already offset-calibrated via positionCalibrationOOP.py) ---
 
 SCS_CALIBRATED_CENTER = 2048  # The position value that is each rotary motor's true center after offset correction
@@ -122,6 +140,13 @@ print(f"Spike Current Threshold (mA): {SPIKE_CURRENT_THRESHOLD_MA}")
 print(f"Homing Torque Limit: {HOMING_TORQUE_LIMIT / 10.0:.1f}%")
 print(f"SC Servo Calibrated Center (motors 7-10): {SCS_CALIBRATED_CENTER}")
 print(f"Rotary Torque Limit (motors 7-10): {ROTARY_TORQUE_LIMIT / 10.0:.1f}%")
+print(f"Max Temperature Limit (all motors): {MAX_TEMPERATURE_LIMIT}")
+print(f"Max Voltage Limit (all motors): {MAX_VOLTAGE_LIMIT / 10.0:.1f}V")
+print(f"Min Voltage Limit (all motors): {MIN_VOLTAGE_LIMIT / 10.0:.1f}V")
+print(f"Unloading Conditions (all motors): {UNLOADING_CONDITIONS}")
+print(f"LED Alarm Conditions (all motors): {LED_ALARM_CONDITIONS}")
+print(f"CW Insensitive Zone (all motors): {CW_INSENSITIVE_ZONE}")
+print(f"CCW Insensitive Zone (all motors): {CCW_INSENSITIVE_ZONE}")
 print("")
 
 # --------------------------------------------------BUS AND MOTOR INITIALIZATION-------------------------------------------------
@@ -183,6 +208,22 @@ with bus:
     print("--- Applying Hardware Position Limits (motors 7-10) ---")
     for id in MOTOR_CONFIGS:
         motors[id].applyPositionLimits()
+
+    # Protection/alarm/dead-zone settings, applied to every motor (6-10) before motor 6's
+    # sensorless homing begins - homing deliberately drives into unknown mechanical stops, so
+    # these hardware safety nets should already be active before that, not just before the
+    # range test that follows once the safe travel bounds are already known.
+    print("--- Applying Protection/Alarm/Dead-Zone Settings (motors 6-10) ---")
+    for motor in motors.values():
+        motor.unlockEeprom()
+        motor.setSetting(SMS_STS_MAX_TEMPERATURE_LIMIT, MAX_TEMPERATURE_LIMIT, 1, "Max Temperature Limit")
+        motor.setSetting(SMS_STS_MAX_VOLTAGE_LIMIT, MAX_VOLTAGE_LIMIT, 1, "Max Voltage Limit")
+        motor.setSetting(SMS_STS_MIN_VOLTAGE_LIMIT, MIN_VOLTAGE_LIMIT, 1, "Min Voltage Limit")
+        motor.setSetting(SMS_STS_UNLOADING_CONDITION, UNLOADING_CONDITIONS, 1, "Unloading Condition")
+        motor.setSetting(SMS_STS_LED_ALARM_CONDITION, LED_ALARM_CONDITIONS, 1, "LED Alarm Condition")
+        motor.setSetting(SMS_STS_CW_DEAD, CW_INSENSITIVE_ZONE, 1, "CW Insensitive Zone")
+        motor.setSetting(SMS_STS_CCW_DEAD, CCW_INSENSITIVE_ZONE, 1, "CCW Insensitive Zone")
+        motor.lockEeprom()
 
     telemetryPlot = None
     backPosition = None
