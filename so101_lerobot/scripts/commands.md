@@ -17,6 +17,12 @@ If power is lost, re-run calibration.py before teleoperating again.
 
 
 cd ../../../so101_lerobot
+
 uv run scripts/06_teleoperate_base_arm.py \
     --leader-port /dev/ttyACM1 --leader-id leader_arm \
     --follower-port /dev/ttyACM0 --follower-id follower_arm
+
+uv run scripts/07_teleoperate_full_10dof.py \
+    --leader-port /dev/ttyACM1 --leader-id leader_arm \
+    --follower-port /dev/ttyACM0 --follower-id follower_arm
+
