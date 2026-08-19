@@ -3,5 +3,8 @@ name = "ps4-teleop"
 version = "0.1.0"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "lerobot[core-scripts,feetech]>=0.4.4",
+    "numpy>=2.5.2",
+    "pybullet>=3.2.7",
     "pygame",
 ]
