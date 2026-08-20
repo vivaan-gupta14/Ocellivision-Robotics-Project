@@ -122,7 +122,7 @@ def moveRobot(robot, targetPosition, targetEulerOrientation = None):
         forces=[500]*len(allMovableJointIndices))
 
 
-#---------------------------------------------START JOINT POSITIONS-------------------------------------------------
+#---------------------------------------------JOINT SETUP-------------------------------------------------
 
 jointNameToIndex = {} #maps joint names to their indices
 manualJointNames = {"jaw_1", "jaw_2", "carriage_prismatic_joint", "roll", "wrist_pitch"}
