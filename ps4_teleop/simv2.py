@@ -3,6 +3,7 @@
 import time
 import numpy as np
 import math
+import threading
 
 #PyBullet Imports
 import pybullet as p
@@ -19,7 +20,33 @@ print("Imports completed")
 def getPS4Data():
     return
 
-def getPygameData()
+def getPygameData(lock, variables, stopEvent):
+    STEP = 0.01
+    while not stopEvent.is_set():
+        pygame.event.pump()
+        keys = pygame.key.get_pressed()
+        with lock:
+            if keys[pygame.K_UP]:
+                variables["z"] = STEP
+            elif keys[pygame.K_DOWN]:
+                variables["z"] = -1*STEP
+            else:
+                variables["z"] = 0.0
+
+            if keys[pygame.K_a]:
+                variables["x"] = STEP
+            elif keys[pygame.K_d]:
+                variables["x"] = -1* STEP
+            else:
+                variables["x"] = 0.0
+
+            if keys[pygame.K_w]:
+                variables["y"] = STEP
+            elif keys[pygame.K_s]:
+                variables["y"] = -1*STEP
+            else:
+                variables["y"] = 0.0
+        time.sleep(0.01)
 
 #--------------------------------------------------HELPER FUNCTIONS------------------------------------------------------#
 
@@ -52,47 +79,6 @@ def drawTCPFrame(robot, toolTipIndex, axisLength=0.05, lineWidth=3):
             parentLinkIndex=toolTipIndex,
         )
 
-def quatMultiply(q1, q2):
-    # Hamilton product: rotate by q2 first, then q1 (both in the same reference frame).
-    x1, y1, z1, w1 = q1
-    x2, y2, z2, w2 = q2
-    return [
-        w1*x2 + x1*w2 + y1*z2 - z1*y2,
-        w1*y2 - x1*z2 + y1*w2 + z1*x2,
-        w1*z2 + x1*y2 - y1*x2 + z1*w2,
-        w1*w2 - x1*x2 - y1*y2 - z1*z2,
-    ]
-
-
-def levelShaft(robot, toolTipIndex):
-    # local Z of PSM1_roll_link is the shaft's pointing axis (roll spins about it). Rather
-    # than guessing which Euler value corresponds to "horizontal" -- zeroing pitch turned
-    # out to snap the shaft to fully vertical instead, since pitch=0 is this link's
-    # straight-up rest orientation -- compute the minimal rotation that takes the shaft's
-    # actual current world-space direction to its horizontal-plane projection directly.
-    linkState = p.getLinkState(robot, toolTipIndex, computeForwardKinematics=1)
-    position, currentQuat = linkState[4], linkState[5]
-
-    rotMat = np.array(p.getMatrixFromQuaternion(currentQuat)).reshape(3, 3)
-    shaftDir = rotMat @ np.array([0.0, 0.0, 1.0])
-
-    horizontalDir = np.array([shaftDir[0], shaftDir[1], 0.0])
-    horizontalDir /= np.linalg.norm(horizontalDir)
-
-    dotVal = np.clip(np.dot(shaftDir, horizontalDir), -1.0, 1.0)
-    angle = np.arccos(dotVal)
-    axis = np.cross(shaftDir, horizontalDir)
-    axisNorm = np.linalg.norm(axis)
-    if axisNorm < 1e-9:
-        deltaQuat = [0.0, 0.0, 0.0, 1.0]
-    else:
-        axis = axis / axisNorm
-        s = np.sin(angle / 2)
-        deltaQuat = [axis[0]*s, axis[1]*s, axis[2]*s, np.cos(angle/2)]
-
-    targetQuat = quatMultiply(deltaQuat, currentQuat)
-    return position, targetQuat
-
 def moveRobot(robot, TCPIndex, allmovableJointIndices, minJointLimits, maxJointLimits, jointRanges, jointDamping, targetTCPPosition, targetTCPRotQuat):
     currentJointPositions = getJointPositions(robot, allmovableJointIndices)
 
@@ -112,8 +98,8 @@ def moveRobot(robot, TCPIndex, allmovableJointIndices, minJointLimits, maxJointL
     for jointIndex, jointPosition in zip(allmovableJointIndices, targetJointPositions):
         p.resetJointState(robot, jointIndex, jointPosition)
 
-    POSITION_TOLERANCE_M = 0.01
-    ROTATION_TOLERANCE_DEGREES = 2.0
+    POSITION_TOLERANCE_M = 0.1
+    ROTATION_TOLERANCE_DEGREES = 10
     FKPosition, FKRotQuat = getSimTCPPose(robot, TCPIndex)
     positionDistance = math.dist(FKPosition, targetTCPPosition)
 
@@ -186,51 +172,75 @@ movableJointRanges = [movableJointUpperLimits[i] - movableJointLowerLimits[i] fo
 movableJointDampings = []
 for name in movableJointNames:
     movableJointDampings.append(1.0)
-# #-----------------------------------------------------------------TESTING EFFECT OF JOINT SETTINGS
 
 position, orientation = p.getBasePositionAndOrientation(robot)
 print(f"Base Position: {position}")
 print(f"Base Orientation (Quaternion): {orientation}")
 
+#------------------------------------------Threading Start-----------------------------------------------------#
+
+posRotVariables = {"x": 0.0, "y": 0.0, "z": 0.0}
+state_lock = threading.Lock()
+stop_event = threading.Event()
+
+pygame.init()
+pygame.display.set_mode((200, 200))
+
+pygameThread = threading.Thread(target = getPygameData, args = (state_lock, posRotVariables, stop_event))
+pygameThread.start()
+
 #-------------------------------------------MAIN FUNCTION------------------------------------------------------#
 
 drawTCPFrame(robot, TCPIndex)
 
-print("realTimeControl")
-p.setRealTimeSimulation(1)
+try:
+    print("realTimeControl")
+    p.setRealTimeSimulation(1)
 
-print("leveling shaft")
-# levelPosition, levelRotQuat = levelShaft(robot, TCPIndex)
-# moveRobot(robot, TCPIndex, 
-#           movableJointIndices, 
-#           movableJointLowerLimits, 
-#           movableJointUpperLimits, 
-#           movableJointRanges,
-#           movableJointDampings,
-#           levelPosition,
-#           levelRotQuat)
+    print (f"\nNumber of Joints: {p.getNumJoints(robot)}")
+    getJointPositions(robot, movableJointIndices, True)
+    tcpPosition, tcpRotQuat = getSimTCPPose(robot, TCPIndex, True)
 
-time.sleep(10)
+    print("moving to start position")
+    targetPosition = [tcpPosition[0], 0.0, 0.0]
 
-print (f"\nNumber of Joints: {p.getNumJoints(robot)}")
-getJointPositions(robot, movableJointIndices, True)
-tcpPosition, tcpRotQuat = getSimTCPPose(robot, TCPIndex, True)
+    moveRobot(robot, TCPIndex, 
+            movableJointIndices, 
+            movableJointLowerLimits, 
+            movableJointUpperLimits, 
+            movableJointRanges,
+            movableJointDampings,
+            targetPosition,
+            tcpRotQuat)
 
-print("moving")
-targetPosition = [tcpPosition[0], 0.0, 0.0]
+    time.sleep(5)
+    getSimTCPPose(robot, TCPIndex, True)
+    time.sleep(5)
+    print("beginning teleop")
+    while not stop_event.is_set():
+        with state_lock:
+            xDelta = posRotVariables["x"]
+            yDelta = posRotVariables["y"]
+            zDelta = posRotVariables["z"]
 
-moveRobot(robot, TCPIndex, 
-          movableJointIndices, 
-          movableJointLowerLimits, 
-          movableJointUpperLimits, 
-          movableJointRanges,
-          movableJointDampings,
-          targetPosition,
-          tcpRotQuat)
+        tcpPosition, tcpRotQuat = getSimTCPPose(robot, TCPIndex)
+        finalTargetPosition = [tcpPosition[0] + xDelta, tcpPosition[1] + yDelta, tcpPosition[2] + zDelta]
+        moveRobot(robot, TCPIndex, 
+            movableJointIndices, 
+            movableJointLowerLimits, 
+            movableJointUpperLimits, 
+            movableJointRanges,
+            movableJointDampings,
+            finalTargetPosition,
+            tcpRotQuat)
 
-time.sleep(5)
-getJointPositions(robot, movableJointIndices, True)
-getSimTCPPose(robot, TCPIndex, True)
-print("done")
-time.sleep(20)
-p.disconnect()
+            
+
+except KeyboardInterrupt:
+    print("KEYBOARD INTERRUPT DETECTED!")
+
+finally:
+    print("SHUTTING DOWN")
+    stop_event.set()
+    pygameThread.join()
+    p.disconnect()
