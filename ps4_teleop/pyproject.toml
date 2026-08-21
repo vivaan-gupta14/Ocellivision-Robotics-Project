@@ -5,6 +5,7 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "lerobot[core-scripts,feetech]>=0.4.4",
     "numpy>=2.5.2",
+    "numpy-quaternion>=2024.0.13",
     "pybullet>=3.2.7",
     "pygame",
 ]
