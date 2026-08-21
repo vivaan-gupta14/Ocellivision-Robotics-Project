@@ -228,7 +228,10 @@
     </collision>
   </link>
 
-  <!-- Link wrist (terminal SO-101 link - gripper removed downstream of here) -->
+  <!-- Link wrist (terminal SO-101 link before the custom mount - the
+       gripper claw mechanism is physically removed, but wrist_roll itself
+       survives as the revolute connection straight into rail_link below,
+       rather than as a separate link/joint pair) -->
   <link name="wrist_link">
     <inertial>
       <origin xyz="-0.000103312 -0.0386143 0.0281156" rpy="0 0 0"/>
@@ -269,7 +272,7 @@
     <parent link="lower_arm_link"/>
     <child link="wrist_link"/>
     <axis xyz="0 0 1"/>
-    <limit effort="10" velocity="10" lower="-1.65806" upper="1.65806"/>
+    <limit effort="10" velocity="10" lower="-1.8596483" upper="1.65806"/>
   </joint>
 
   <transmission name="wrist_flex_trans">
@@ -289,7 +292,7 @@
     <parent link="upper_arm_link"/>
     <child link="lower_arm_link"/>
     <axis xyz="0 0 1"/>
-    <limit effort="10" velocity="10" lower="-1.69" upper="1.69"/>
+    <limit effort="10" velocity="10" lower="-1.69" upper="1.6908750"/>
   </joint>
 
   <transmission name="elbow_flex_trans">
@@ -309,7 +312,7 @@
     <parent link="shoulder_link"/>
     <child link="upper_arm_link"/>
     <axis xyz="0 0 1"/>
-    <limit effort="10" velocity="10" lower="-1.74533" upper="1.74533"/>
+    <limit effort="10" velocity="10" lower="-1.8205529" upper="1.74533"/>
   </joint>
 
   <transmission name="shoulder_lift_trans">
@@ -369,14 +372,50 @@
     </inertial>
   </link>
 
-  <!-- Fixed mount: rail_link onto the SO-101 wrist_link, gripper/wrist_roll
-       removed. Transform computed from the combined Fusion assembly - see
-       file header for derivation and the stated assumption. -->
-  <joint name="wrist_to_rail" type="fixed">
+  <!-- Mount point onto rail_link, now revolute (wrist_roll) instead of
+       fixed - axis and limits carried over from the reference SO-101
+       URDF's wrist_roll joint. Origin is the SAME measured transform as
+       before (computed relative to wrist_link, unchanged) - nothing about
+       rail_link's position/orientation moved, only the joint type and
+       axis/limit were added. -->
+  <!-- Dummy pivot link - exists only so the revolute rotation happens at
+       the real measured wrist_roll shaft location, without disturbing
+       rail_link's own mesh origin (which must stay untouched at "0 0 0"
+       to preserve its correct relative alignment with carriage_link's
+       mesh - both were exported from the same Fusion file sharing one
+       coordinate system, and recentering just one of them breaks that
+       alignment, which is exactly what went wrong on the previous
+       attempt). -->
+  <link name="wrist_roll_pivot_link"/>
+
+  <joint name="wrist_to_rail" type="revolute">
     <parent link="wrist_link"/>
-    <child link="rail_link"/>
-    <origin xyz="-0.210121 -0.121293 0.023294" rpy="1.570643 0.017449 -0.008808"/>
+    <child link="wrist_roll_pivot_link"/>
+    <origin xyz="-0.000001 -0.061549 0.019627" rpy="1.570643 0.017449 -0.008808"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="10" velocity="10" lower="-1.25" upper="1.25"/>
   </joint>
+
+  <!-- Fixed offset from the pivot back to rail_link's own untouched
+       origin - the negative of the same measured offset used above, with
+       no additional rotation (the revolute joint above already carries
+       the correct orientation). -->
+  <joint name="pivot_to_rail" type="fixed">
+    <parent link="wrist_roll_pivot_link"/>
+    <child link="rail_link"/>
+    <origin xyz="-0.209618 0 0.061592" rpy="0 0 0"/>
+  </joint>
+
+  <transmission name="wrist_to_rail_trans">
+    <type>transmission_interface/SimpleTransmission</type>
+    <joint name="wrist_to_rail">
+      <hardwareInterface>hardware_interface/PositionJointInterface</hardwareInterface>
+    </joint>
+    <actuator name="motor5">
+      <hardwareInterface>hardware_interface/PositionJointInterface</hardwareInterface>
+      <mechanicalReduction>1</mechanicalReduction>
+    </actuator>
+  </transmission>
 
   <link name="carriage_link">
     <visual>
@@ -475,15 +514,18 @@
     </collision>
   </link>
 
-  <!-- z offset = 0.56, measured directly by the user in Fusion (distance
-       from mount origin to where the shaft should sit, based on desired
-       protrusion past the dovetail opening). Supersedes the 0.050406
-       clearance-only value - see file history for that derivation. -->
+  <!-- z offset = 0.493606, derived from: mount-origin-to-dovetail-face
+       (0.050406m, measured/trusted) + user-measured housing-emerge-to-
+       jaw-tip length (46-46.5cm, midpoint 0.4625m used) - minus the fixed
+       internal roll_link-to-tool_tip kinematic distance (0.0193m, computed
+       from the untouched original dVRK joint offsets). Assumes the
+       dovetail face is an adequate proxy for "where the shaft emerges
+       from housing" - the two may differ slightly. -->
   <joint name="roll" type="revolute">
     <parent link="PSM1_adaptor_link"/>
     <child link="PSM1_roll_link"/>
     <axis xyz="0.0 0.0 1"/>
-    <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.56"/>
+    <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.493606"/>
     <limit effort="1000" lower="-4.53786" upper="4.53786" velocity=".4"/>
   </joint>
   <link name="PSM1_roll_link">
