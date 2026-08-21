@@ -2,6 +2,7 @@
 
 import time
 import numpy as np
+import quaternion
 import math
 import threading
 
@@ -17,35 +18,69 @@ print("Imports completed")
 #-------------------------------------------------THREADING FUNCTIONS------------------------------------------------------#
 
 #Get's the PS4 controller data and updates variable dictionary using lock
-def getPS4Data():
-    return
+def getPS4Data(lock, variables, stopEvent, controller):
+    DIVIDING_FACTOR = 1000
+    L2Trigger = 5
+    R2Trigger = 2
+    while not stopEvent.is_set():
+        pygame.event.pump()
+        with lock:
+            if round(controller.get_axis(L2Trigger), 1) != 0.0:
+                variables["z"] = round(controller.get_axis(L2Trigger), 1)/DIVIDING_FACTOR
+            elif round(controller.get_axis(R2Trigger), 1) != 0.0:
+                variables["z"] = round(controller.get_axis(R2Trigger), 1)/DIVIDING_FACTOR
+            else:
+                variables["z"] = 0.0
+            
+        time.sleep(0.01)
 
 def getPygameData(lock, variables, stopEvent):
-    STEP = 0.01
+    STEP = 0.001
     while not stopEvent.is_set():
         pygame.event.pump()
         keys = pygame.key.get_pressed()
         with lock:
-            if keys[pygame.K_UP]:
+            if keys[pygame.K_PAGEDOWN]:
                 variables["z"] = STEP
-            elif keys[pygame.K_DOWN]:
+            elif keys[pygame.K_PAGEUP]:
                 variables["z"] = -1*STEP
             else:
                 variables["z"] = 0.0
 
-            if keys[pygame.K_a]:
+            if keys[pygame.K_UP]:
                 variables["x"] = STEP
-            elif keys[pygame.K_d]:
+            elif keys[pygame.K_DOWN]:
                 variables["x"] = -1* STEP
             else:
                 variables["x"] = 0.0
 
-            if keys[pygame.K_w]:
+            if keys[pygame.K_LEFT]:
                 variables["y"] = STEP
-            elif keys[pygame.K_s]:
+            elif keys[pygame.K_RIGHT]:
                 variables["y"] = -1*STEP
             else:
                 variables["y"] = 0.0
+
+            if keys[pygame.K_e]:
+                variables["roll"] = STEP
+            elif keys[pygame.K_q]:
+                variables["roll"] = -1*STEP
+            else:
+                variables["roll"] = 0.0            
+            
+            if keys[pygame.K_w]:
+                variables["pitch"] = STEP
+            elif keys[pygame.K_s]:
+                variables["pitch"] = -1*STEP
+            else:
+                variables["pitch"] = 0.0
+
+            if keys[pygame.K_d]:
+                variables["yaw"] = STEP
+            elif keys[pygame.K_a]:
+                variables["yaw"] = -1*STEP
+            else:
+                variables["yaw"] = 0.0
         time.sleep(0.01)
 
 #--------------------------------------------------HELPER FUNCTIONS------------------------------------------------------#
@@ -179,12 +214,25 @@ print(f"Base Orientation (Quaternion): {orientation}")
 
 #------------------------------------------Threading Start-----------------------------------------------------#
 
-posRotVariables = {"x": 0.0, "y": 0.0, "z": 0.0}
+posRotVariables = {"x": 0.0, "y": 0.0, "z": 0.0, "roll": 0.0, "pitch": 0.0, "yaw": 0.0}
 state_lock = threading.Lock()
 stop_event = threading.Event()
 
 pygame.init()
 pygame.display.set_mode((200, 200))
+
+# pygame.joystick.init()
+
+# while pygame.joystick.get_count() == 0:
+#     print("NO CONTROLLER DETECTED. Please connect controller")
+
+# PS4 = pygame.joystick.Joystick(0)
+# PS4.init()
+# print(f"Controller detected: {PS4.get_name()} ({PS4.get_numaxes()} axes)")
+# pygame.event.pump()
+# print(f"Axis values at startup (press L2/R2 to see which index moves): {[PS4.get_axis(i) for i in range(PS4.get_numaxes())]}")
+
+# pygameThread = threading.Thread(target = getPS4Data, args = (state_lock, posRotVariables, stop_event, PS4))
 
 pygameThread = threading.Thread(target = getPygameData, args = (state_lock, posRotVariables, stop_event))
 pygameThread.start()
@@ -203,7 +251,6 @@ try:
 
     print("moving to start position")
     targetPosition = [tcpPosition[0], 0.0, 0.0]
-
     moveRobot(robot, TCPIndex, 
             movableJointIndices, 
             movableJointLowerLimits, 
@@ -222,9 +269,17 @@ try:
             xDelta = posRotVariables["x"]
             yDelta = posRotVariables["y"]
             zDelta = posRotVariables["z"]
+            rollDelta = posRotVariables["roll"]
+            pitchDelta = posRotVariables["pitch"]
+            yawDelta = posRotVariables["yaw"]
 
         tcpPosition, tcpRotQuat = getSimTCPPose(robot, TCPIndex)
+
         finalTargetPosition = [tcpPosition[0] + xDelta, tcpPosition[1] + yDelta, tcpPosition[2] + zDelta]
+
+        rotQuatDelta = p.getQuaternionFromEuler([rollDelta, pitchDelta, yawDelta])
+        _, finalTargetRotQuat = p.multiplyTransforms([0,0,0], tcpRotQuat, [0,0,0], rotQuatDelta)
+
         moveRobot(robot, TCPIndex, 
             movableJointIndices, 
             movableJointLowerLimits, 
@@ -232,7 +287,7 @@ try:
             movableJointRanges,
             movableJointDampings,
             finalTargetPosition,
-            tcpRotQuat)
+            finalTargetRotQuat)
 
             
 
